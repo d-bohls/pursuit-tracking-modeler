@@ -1,8 +1,8 @@
 // End-to-end smoke test of the production build: serves it to a real
 // browser, feeds it the reference recording through the file
-// picker, runs the analysis, and checks the rendered model matches the
-// numbers the engine produces headlessly. Catches UI wiring bugs that the
-// Node-side validation can't see.
+// picker, and checks the rendered model matches the numbers the engine
+// produces headlessly. Catches UI wiring bugs that the Node-side validation
+// can't see.
 //
 //   node test/smoke-test.mjs
 
@@ -16,7 +16,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = await serve();
 const dataPath = join(root, 'test/data/reference-data.txt');
 
-const EXPECTED_MEAN_2ND_ORDER = 'y[n]-(1.7908)y[n-1]+(0.9446)y[n-2]=(0.1538)x[n-7.8]';
+// The UI reports the MEDIAN model -- see SIM_SOURCE in src/main.ts. This is
+// the string `npm run validate` prints for the same recording.
+const EXPECTED_MEDIAN_2ND_ORDER = 'y[n]-(1.7880)y[n-1]+(0.9406)y[n-2]=(0.1526)x[n-7.5]';
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -38,59 +40,102 @@ const fail = (msg) => {
 // 1. page loaded without script errors
 if (consoleErrors.length) fail(`console errors on load: ${consoleErrors.join(' | ')}`);
 
-// 2. the canvas exists and the analyze button starts disabled
-const analyzeDisabled = await page.locator('#analyzeBtn').isDisabled();
-if (!analyzeDisabled) fail('analyze button should start disabled with no data loaded');
+// Save and the sample dump live in the Recorded data modal now.
+const openData = async () => {
+  await page.locator('#dataBtn').click();
+  await page.waitForTimeout(200);
+};
+const closeData = async () => {
+  await page.locator('#dataDialog button[value="close"]').click();
+  await page.waitForTimeout(200);
+};
+
+// 2. the empty state is honest: nothing to save, no trials, no model
+await openData();
+if (!(await page.locator('#saveDataBtn').isDisabled())) {
+  fail('save button should start disabled with no recording');
+}
+await closeData();
+if ((await page.locator('.trial-card').count()) !== 0) fail('trial cards present before any data');
+if (!/Record a few steps/.test((await page.locator('#readout').textContent()) ?? '')) {
+  fail('readout did not show its empty state');
+}
 
 // 3. load the real recording through the file picker
 await page.locator('#fileInput').setInputFiles(dataPath);
-await page.waitForTimeout(500);
+await page.waitForTimeout(2500);
 
-const hint = await page.locator('#graphHint').textContent();
-if (!/Loaded 437 samples/.test(hint ?? '')) fail(`unexpected load hint: ${hint}`);
+const status = await page.locator('#status').textContent();
+if (!/Loaded 437 samples/.test(status ?? '')) fail(`unexpected load status: ${status}`);
 
+await openData();
 const samplesText = await page.locator('#samplesOut').inputValue();
 if (!samplesText.startsWith('n\tx[n]\ty[n]')) fail('samples pane did not populate');
+if (await page.locator('#saveDataBtn').isDisabled()) fail('save should be enabled once data is loaded');
+await closeData();
 
-// 4. run the analysis
-await page.locator('#analyzeBtn').click();
-await page.waitForTimeout(1500);
+// 4. one card per trial, and the summary model matches the engine
+const cards = await page.locator('.trial-card').count();
+if (cards !== 10) fail(`expected 10 trial cards, got ${cards}`);
 
-const dialogOpen = await page.locator('#analyzeDialog').evaluate((d) => d.open);
-if (!dialogOpen) fail('analysis dialog did not open');
-
-const rows = await page.locator('#resultsTable tbody tr').count();
-if (rows !== 12) fail(`expected 10 trial rows + mean + median, got ${rows}`);
-
-const meanRow = await page.locator('#resultsTable tbody tr').nth(10).textContent();
-if (!meanRow?.includes(EXPECTED_MEAN_2ND_ORDER)) {
-  fail(`mean second-order model mismatch.\n  expected to contain: ${EXPECTED_MEAN_2ND_ORDER}\n  got: ${meanRow}`);
+const details = (await page.locator('.details-line').textContent()) ?? '';
+if (!details.includes(EXPECTED_MEDIAN_2ND_ORDER)) {
+  fail(`median second-order model mismatch.\n  expected to contain: ${EXPECTED_MEDIAN_2ND_ORDER}\n  got: ${details}`);
 }
 
-const tf = await page.locator('#continuousTf').textContent();
-if (!/natural frequency/.test(tf ?? '') || !/damping ratio/.test(tf ?? '')) {
-  fail(`continuous transfer function panel did not render: ${tf}`);
-}
+// 5. the headline readout rendered, in units a human can read
+const tiles = await page.locator('.tile-value').allTextContents();
+if (tiles.length !== 4) fail(`expected 4 readout tiles, got ${tiles.length}`);
 
 // Units guard. The continuous poles and the delays must share one time unit
 // (seconds / rad/s).
-const tau = Number((tf ?? '').match(/time constant τ = ([-\d.]+) s/)?.[1]);
-const wn = Number((tf ?? '').match(/natural frequency ωn = ([-\d.]+) rad\/s/)?.[1]);
-if (!(tau > 0.01 && tau < 10)) fail(`first-order time constant ${tau} s is not physically plausible (unit mismatch?)`);
+const wn = Number(tiles.find((t) => /rad\/s/.test(t))?.replace(/[^\d.]/g, ''));
+const tau = Number(details.match(/τ = ([-\d.]+) s/)?.[1]);
 if (!(wn > 0.1 && wn < 100)) fail(`natural frequency ${wn} rad/s is not physically plausible (unit mismatch?)`);
+if (!(tau > 0.01 && tau < 10)) fail(`first-order time constant ${tau} s is not physically plausible (unit mismatch?)`);
 
-// 5. the plots actually drew something (non-blank canvases)
+// 6. excluding a trial re-derives the summary from what is left, and putting
+// it back restores the original model exactly
+const before = await page.locator('.details-line').textContent();
+await page.locator('.trial-card input').first().uncheck();
+await page.waitForTimeout(300);
+const excluded = await page.locator('.details-line').textContent();
+if (excluded === before) fail('excluding a trial did not change the identified model');
+if (!/1 excluded/.test((await page.locator('#readoutSource').textContent()) ?? '')) {
+  fail('readout did not report the excluded trial');
+}
+await page.locator('.trial-card input').first().check();
+await page.waitForTimeout(300);
+if ((await page.locator('.details-line').textContent()) !== before) {
+  fail('re-including the trial did not restore the model');
+}
+
+// 7. the plots actually drew something (non-blank canvases)
 const canvasHasInk = (selector) =>
   page.locator(selector).evaluate((c) => {
     const ctx = c.getContext('2d');
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    const [r0, g0, b0] = [data[0], data[1], data[2]];
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) return true;
+      if (data[i] !== r0 || data[i + 1] !== g0 || data[i + 2] !== b0) return true;
     }
     return false;
   });
 if (!(await canvasHasInk('#freqGraph'))) fail('frequency response canvas is blank');
 if (!(await canvasHasInk('#poleGraph'))) fail('pole plot canvas is blank');
+if (!(await canvasHasInk('.trial-card canvas'))) fail('trial sparkline is blank');
+
+// 8. dark mode repaints the canvases too -- they cannot inherit CSS colours
+const surfaceOf = (selector) =>
+  page.locator(selector).evaluate((c) => {
+    const d = c.getContext('2d').getImageData(2, 2, 1, 1).data;
+    return `${d[0]},${d[1]},${d[2]}`;
+  });
+const lightSurface = await surfaceOf('#freqGraph');
+await page.locator('#themeBtn').click();
+await page.waitForTimeout(400);
+const darkSurface = await surfaceOf('#freqGraph');
+if (lightSurface === darkSurface) fail(`plot surface did not follow the theme (still ${lightSurface})`);
 
 if (consoleErrors.length) fail(`console errors during run: ${consoleErrors.join(' | ')}`);
 
@@ -102,8 +147,10 @@ if (process.exitCode) {
 } else {
   console.log('Smoke test passed:');
   console.log('  - page loads clean with no console errors');
+  console.log('  - empty state renders before any data');
   console.log('  - 437 samples loaded through the file picker');
-  console.log('  - 10 trials + mean row rendered');
-  console.log(`  - mean model matches engine output: ${EXPECTED_MEAN_2ND_ORDER}`);
-  console.log('  - continuous H(s) panel and both plots rendered');
+  console.log('  - 10 trial cards rendered');
+  console.log(`  - median model matches engine output: ${EXPECTED_MEDIAN_2ND_ORDER}`);
+  console.log('  - excluding and restoring a trial re-derives the model');
+  console.log('  - frequency, pole and sparkline canvases drew, and follow the theme');
 }

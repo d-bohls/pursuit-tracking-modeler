@@ -2,20 +2,65 @@
 
 ## What it does
 
-1. **Live experiment** — a black target line jumps to a random vertical
-   position every few seconds (a step input). You track it with the mouse.
-   Both positions are recorded at a configurable sample rate.
+1. **Live experiment** — a target line jumps to a random vertical position
+   every few seconds (a step input). You track it with the pointer. Both
+   positions are recorded at a configurable sample rate.
 2. **Analysis** — the recording is split into trials at each step, the
    target/response pair is deconvolved to get an impulse response `h[n]`,
-   and `h[n]` is curve-fit (brute-force, coarse-to-fine grid search) to a
+   and the trial is curve-fit (brute-force, coarse-to-fine grid search) to a
    first-order and a second-order discrete-time pole model.
 3. **Laplace domain** — the identified discrete poles are converted to their
    continuous-time (`s`-plane) equivalents, and displayed as a standard
    second-order transfer function `H(s) = ωn² / (s² + 2ζωn·s + ωn²)` with its
    natural frequency, damping ratio, and pure time delay.
 
+Identification runs **as you record**: each trial is identified the moment it
+closes (~13 ms), so the model on screen firms up step by step instead of
+appearing all at once at the end.
+
 You can also load a previously recorded `test/data/reference-data.txt` file instead of running a live experiment —
 useful for re-analyzing old recordings.
+
+## The interface
+
+- **No modal.** The plot, the identified model, and the per-trial evidence
+  share one scrolling page. You can watch ζ settle while you are still
+  tracking.
+- **The plot states its own affordance.** The instruction list is gone; the
+  plot says `Click the plot to start`, then `Recording · N steps · Ms`.
+  Space bar works too.
+- **Trials are objects, not table rows.** Each completed step becomes a card
+  with a thumbnail of the step and the response to it. Untick one and every
+  number above re-derives from what is left — outlier rejection is a decision
+  you make and see, not a heuristic that happens to you.
+- **Fit error is measured against the step that provoked it.** Steps are drawn
+  from a 3× range of sizes, so raw pixels are not comparable between trials:
+  on the reference recording trial 3 (9.1 px on a 39 px step) reads as better than
+  trial 2 (11.0 px on 77 px) in pixels, and far worse — 23% against 14% — as a
+  fraction of the step. Trials are flagged at 3× the median in *both*
+  directions: a fit far worse than its peers did not measure the same system,
+  and a fit far better is just as suspect. The reference recording has one of the
+  latter, at 0.3% where every other trial sits above 10% — a trial with almost
+  no dynamics in it, contributing a confident number about nothing.
+- **The headline is about you**, not about the polynomial: reaction delay,
+  overshoot, damping, natural frequency. `H(s)` is set as an actual fraction
+  underneath as the supporting evidence.
+- **The model can run beside you.** With `Draw the model's prediction`
+  enabled, the identified system is driven by the same target on its own past
+  and drawn as a dashed ghost — so you can see where the model and the hand
+  disagree, live.
+- Dark mode, HiDPI-correct canvases, a resizable plot, pointer (not mouse)
+  input so a tablet works, and a data palette validated for colour-vision
+  deficiency.
+- On a wide screen the plot is a full-width row with the readout and the
+  trials sharing the space beneath it; both cards use container queries, so
+  they lay themselves out by the room they actually have rather than by the
+  size of the window. Settings and the theme persist in `localStorage`;
+  recordings deliberately do not.
+
+The recording coordinate space is fixed at 493 units (`LOGICAL_HEIGHT`) rather
+than following the canvas, so a recording's step sizes and RMS error mean the
+same thing at any window size.
 
 ## Running it
 

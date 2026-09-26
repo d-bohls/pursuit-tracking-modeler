@@ -22,8 +22,14 @@ export interface TrialAnalysis {
   stepSize: number;
 }
 
-export interface AnalysisResult {
-  trials: TrialAnalysis[];
+/**
+ * The summary models a set of trials agrees on. Split out from AnalysisResult
+ * so the UI can re-derive it from a SUBSET of trials -- excluding a trial that
+ * fit badly is a judgement the operator should be able to make and see the
+ * consequences of, which means this has to be computable without re-running
+ * the (far more expensive) per-trial identification.
+ */
+export interface TrialAggregate {
   averageDiscrete: DiscreteModelParams;
   averageContinuous: ContinuousModelParams;
   /**
@@ -32,6 +38,10 @@ export interface AnalysisResult {
    */
   medianDiscrete: DiscreteModelParams;
   medianContinuous: ContinuousModelParams;
+}
+
+export interface AnalysisResult extends TrialAggregate {
+  trials: TrialAnalysis[];
 }
 
 function median(values: number[]): number {
@@ -45,52 +55,65 @@ function average(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-export function analyzeExperiment(rawXs: Float64Array, rawYs: Float64Array, samplePeriodMs: number): AnalysisResult {
-  const rawTrials = parseTrials(rawXs, rawYs);
-  const padded = padTrials(rawTrials, 10);
+/**
+ * Identify ONE trial: deconvolution for the frequency plot, then an
+ * output-error fit of a first- and second-order model, reported in both the
+ * discrete and continuous domains.
+ *
+ * `trial` is the raw (unpadded) trial the models are fitted against; `padded`
+ * is the same trial run through padTrials, used only for the deconvolution.
+ *
+ * Exposed separately from analyzeExperiment so a live recording can identify
+ * each trial as it completes (~13 ms) instead of re-identifying every trial
+ * from scratch each time a new one lands.
+ */
+export function analyzeTrial(trial: Trial, padded: Trial, samplePeriodMs: number): TrialAnalysis {
+  // Identify against the recorded response, driving the model with the real
+  // input (output-error). Deconvolution and the DFT are still computed, but
+  // only to draw the frequency-response plot -- see the note in curveFit.ts
+  // for why fitting h[n] biases the damping.
+  const hn = deconvolve(padded.xn, padded.yn);
 
-  const trials: TrialAnalysis[] = rawTrials.map((trial, i) => {
-    // Identify against the recorded response, driving the model with the real
-    // input (output-error). Deconvolution and the DFT are still computed, but
-    // only to draw the frequency-response plot -- see the note in curveFit.ts
-    // for why fitting h[n] biases the damping.
-    const hn = deconvolve(padded[i].xn, padded[i].yn);
+  const fit1 = fit1PoleOutputError(trial.xn, trial.yn);
+  const fit2 = fit2PoleOutputError(trial.xn, trial.yn);
 
-    const fit1 = fit1PoleOutputError(trial.xn, trial.yn);
-    const fit2 = fit2PoleOutputError(trial.xn, trial.yn);
+  // seconds, so the continuous poles come out in rad/s and match the
+  // delays below (see the units note in poleConversion.ts)
+  const tsSeconds = samplePeriodMs / 1000;
+  const c1 = discretePoleToContinuous(fit1.p, 0, tsSeconds);
+  const c2 = discretePoleToContinuous(fit2.p1, fit2.p2, tsSeconds);
 
-    // seconds, so the continuous poles come out in rad/s and match the
-    // delays below (see the units note in poleConversion.ts)
-    const tsSeconds = samplePeriodMs / 1000;
-    const c1 = discretePoleToContinuous(fit1.p, 0, tsSeconds);
-    const c2 = discretePoleToContinuous(fit2.p1, fit2.p2, tsSeconds);
+  const discrete: DiscreteModelParams = {
+    P11: fit1.p,
+    D1: fit1.D,
+    P21: fit2.p1,
+    P22: fit2.p2,
+    D2: fit2.D,
+  };
+  const continuous: ContinuousModelParams = {
+    P11: c1.cr, // continuous pole is real for the 1-pole model
+    D1: (fit1.D * samplePeriodMs) / 1000,
+    P21: c2.cr,
+    P22: c2.ci,
+    D2: (fit2.D * samplePeriodMs) / 1000,
+  };
 
-    const discrete: DiscreteModelParams = {
-      P11: fit1.p,
-      D1: fit1.D,
-      P21: fit2.p1,
-      P22: fit2.p2,
-      D2: fit2.D,
-    };
-    const continuous: ContinuousModelParams = {
-      P11: c1.cr, // continuous pole is real for the 1-pole model
-      D1: (fit1.D * samplePeriodMs) / 1000,
-      P21: c2.cr,
-      P22: c2.ci,
-      D2: (fit2.D * samplePeriodMs) / 1000,
-    };
+  return {
+    trial,
+    hn,
+    discrete,
+    continuous,
+    fit1Rms: fit1.rms,
+    fit2Rms: fit2.rms,
+    stepSize: Math.abs(trial.xn[trial.xn.length - 1]),
+  };
+}
 
-    return {
-      trial,
-      hn,
-      discrete,
-      continuous,
-      fit1Rms: fit1.rms,
-      fit2Rms: fit2.rms,
-      stepSize: Math.abs(trial.xn[trial.xn.length - 1]),
-    };
-  });
-
+/**
+ * Mean and median of a set of identified trials. Takes the trials rather than
+ * the raw samples so the caller can leave trials out -- see TrialAggregate.
+ */
+export function aggregateTrials(trials: TrialAnalysis[], samplePeriodMs: number): TrialAggregate {
   const averageDiscrete: DiscreteModelParams = {
     P11: average(trials.map((t) => t.discrete.P11)),
     D1: average(trials.map((t) => t.discrete.D1)),
@@ -126,7 +149,14 @@ export function analyzeExperiment(rawXs: Float64Array, rawYs: Float64Array, samp
     D2: (medianDiscrete.D2 * samplePeriodMs) / 1000,
   };
 
-  return { trials, averageDiscrete, averageContinuous, medianDiscrete, medianContinuous };
+  return { averageDiscrete, averageContinuous, medianDiscrete, medianContinuous };
+}
+
+export function analyzeExperiment(rawXs: Float64Array, rawYs: Float64Array, samplePeriodMs: number): AnalysisResult {
+  const rawTrials = parseTrials(rawXs, rawYs);
+  const padded = padTrials(rawTrials, 10);
+  const trials = rawTrials.map((trial, i) => analyzeTrial(trial, padded[i], samplePeriodMs));
+  return { trials, ...aggregateTrials(trials, samplePeriodMs) };
 }
 
 /** e.g. */

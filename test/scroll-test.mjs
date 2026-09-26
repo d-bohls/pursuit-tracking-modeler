@@ -21,7 +21,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = await serve();
 
 const RUN_MS = 6000;
-const SCROLL_PERIOD_MS = 50; // must match ExperimentConfig.scrollPeriodMs
+const VISIBLE_MS = 20_000; // must match VISIBLE_MS in src/ui/experiment.ts
+const LEAD_ANCHOR = 0.5; // must match LEAD_ANCHOR in src/ui/experiment.ts
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -32,9 +33,10 @@ await page.goto(app.url);
 const box = await page.locator('#graph').boundingBox();
 const cx = box.x + box.width / 2;
 
-// start the experiment, then track the target with a sweeping mouse motion
+// Start from the Record button on the plot. Pressing the plot itself no
+// longer starts or stops a run -- it offers a Stop prompt instead.
+await page.locator('#recordBtn').click();
 await page.mouse.move(cx, box.y + box.height / 2);
-await page.mouse.click(cx, box.y + box.height / 2);
 
 const started = Date.now();
 while (Date.now() - started < RUN_MS) {
@@ -47,9 +49,14 @@ while (Date.now() - started < RUN_MS) {
   await page.waitForTimeout(25);
 }
 const elapsed = Date.now() - started;
-await page.mouse.click(cx, box.y + box.height / 2); // stop
+await page.keyboard.press('Space'); // explicit stop
 
-// Measure ink: for each column, how many non-white pixels?
+// Measure ink: for each column, how many DATA pixels?
+//
+// "Data pixel" means chromatic -- the series palette is saturated blue /
+// orange / aqua, while every piece of chrome (surface, centre line, trial
+// dividers) is neutral grey. Thresholding on darkness instead would count the
+// full-width centre line in every column and make the scroll check vacuous.
 const stats = await page.locator('#graph').evaluate((c) => {
   const ctx = c.getContext('2d');
   const { data } = ctx.getImageData(0, 0, c.width, c.height);
@@ -58,8 +65,9 @@ const stats = await page.locator('#graph').evaluate((c) => {
     let n = 0;
     for (let y = 0; y < c.height; y++) {
       const i = (y * c.width + x) * 4;
-      // count anything meaningfully darker than the white background
-      if (data[i] < 235 || data[i + 1] < 235 || data[i + 2] < 235) n++;
+      const max = Math.max(data[i], data[i + 1], data[i + 2]);
+      const min = Math.min(data[i], data[i + 1], data[i + 2]);
+      if (max - min > 30) n++;
     }
     perColumn.push(n);
   }
@@ -77,7 +85,10 @@ const stats = await page.locator('#graph').evaluate((c) => {
 await browser.close();
 await app.close();
 
-const expectedScrolled = Math.min(elapsed / SCROLL_PERIOD_MS, stats.width);
+// The pen is pinned at LEAD_ANCHOR and history runs back from it, so the
+// inked span grows at one full width per VISIBLE_MS until it fills the
+// anchor's share of the canvas -- it never reaches the full width.
+const expectedScrolled = Math.min(elapsed / VISIBLE_MS, LEAD_ANCHOR) * stats.width;
 let failed = false;
 const fail = (m) => {
   console.error(`FAIL: ${m}`);

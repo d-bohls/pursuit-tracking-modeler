@@ -42,12 +42,10 @@ console.log(`before identification: ζ = ${before}`);
 if (Math.abs(before - DEMO_ZETA) > 0.01) fail(`expected the demo pole ζ≈${DEMO_ZETA}, got ${before}`);
 if (!/demo model/.test(beforeText)) fail(`readout should say it is the demo model: "${beforeText}"`);
 
-// 2. identify from the real recording
+// 2. identify from the real recording. Identification runs automatically on
+// load now -- there is no analyze button to press and no dialog to dismiss.
 await page.locator('#fileInput').setInputFiles(dataPath);
-await page.waitForTimeout(400);
-await page.locator('#analyzeBtn').click();
-await page.waitForTimeout(1500);
-await page.locator('#closeAnalyze').click();
+await page.waitForTimeout(2500);
 
 const after = await zetaFromUi();
 const afterText = (await page.locator('#simModelInfo').textContent()) ?? '';
@@ -61,11 +59,14 @@ if (Math.abs(after - before) < 0.05) {
 if (!/your identified model/.test(afterText)) fail(`readout should say it switched: "${afterText}"`);
 
 // 3. and the simulated run should visibly overshoot, since ζ=0.36 means ~29%
+// The run controls live on the plot now, and the mode lives in Settings.
+await page.locator('#settingsBtn').click();
 await page.selectOption('#simulationMode', 'second');
-const box = await page.locator('#graph').boundingBox();
-await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+await page.locator('#settingsDialog button[value="close"]').click();
+await page.locator('#recordBtn').click();
 await page.waitForTimeout(9000);
-await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+await page.keyboard.press('Space');
+await page.waitForTimeout(500);
 
 // Measure overshoot directly from the recorded samples: for each step of the
 // target, how far past it did the simulated response travel?
