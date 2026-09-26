@@ -1,0 +1,111 @@
+// Verifies that the self-test simulates the system that was actually
+// identified.
+//
+// A simulation stuck on the built-in demo pole (0.8, 0.2 -- zeta 0.62, ~8%
+// overshoot) would still look plausible and fail nothing else, so this checks
+// that the identified model is what gets played.
+//
+//   node test/simulation-test.mjs
+
+import { chromium } from 'playwright';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { serve } from './serve.mjs';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+const app = await serve();
+const dataPath = join(root, 'test/data/reference-data.txt');
+
+// zeta of the built-in demo pole, and of the model the reference recording yields.
+const DEMO_ZETA = 0.6185;
+const IDENTIFIED_ZETA = 0.0767; // median of the trials under output-error identification
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+await page.goto(app.url);
+
+let failed = false;
+const fail = (m) => {
+  console.error(`FAIL: ${m}`);
+  failed = true;
+};
+const zetaFromUi = async () =>
+  Number((await page.locator('#simModelInfo').textContent())?.match(/ζ ([\d.]+)/)?.[1]);
+
+// 1. before identification: the demo model, and it should say so
+const before = await zetaFromUi();
+const beforeText = (await page.locator('#simModelInfo').textContent()) ?? '';
+console.log(`before identification: ζ = ${before}`);
+if (Math.abs(before - DEMO_ZETA) > 0.01) fail(`expected the demo pole ζ≈${DEMO_ZETA}, got ${before}`);
+if (!/demo model/.test(beforeText)) fail(`readout should say it is the demo model: "${beforeText}"`);
+
+// 2. identify from the real recording
+await page.locator('#fileInput').setInputFiles(dataPath);
+await page.waitForTimeout(400);
+await page.locator('#analyzeBtn').click();
+await page.waitForTimeout(1500);
+await page.locator('#closeAnalyze').click();
+
+const after = await zetaFromUi();
+const afterText = (await page.locator('#simModelInfo').textContent()) ?? '';
+console.log(`after  identification: ζ = ${after}`);
+if (Math.abs(after - IDENTIFIED_ZETA) > 0.01) {
+  fail(`simulation should now use the identified model (ζ≈${IDENTIFIED_ZETA}), got ${after}`);
+}
+if (Math.abs(after - before) < 0.05) {
+  fail(`ζ barely moved (${before} -> ${after}) -- the simulation is probably still on the demo pole`);
+}
+if (!/your identified model/.test(afterText)) fail(`readout should say it switched: "${afterText}"`);
+
+// 3. and the simulated run should visibly overshoot, since ζ=0.36 means ~29%
+await page.selectOption('#simulationMode', 'second');
+const box = await page.locator('#graph').boundingBox();
+await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+await page.waitForTimeout(9000);
+await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+// Measure overshoot directly from the recorded samples: for each step of the
+// target, how far past it did the simulated response travel?
+const overshoot = await page.locator('#samplesOut').evaluate((el) => {
+  const rows = el.value
+    .split('\n')
+    .slice(2)
+    .map((l) => l.split('\t').map(Number))
+    .filter((r) => r.length >= 3 && r.every((v) => Number.isFinite(v)));
+  let worst = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const [, x, y] = rows[i];
+    const prevX = rows[i - 1][1];
+    if (x !== prevX) {
+      // a step: look ahead for the peak excursion relative to the step size
+      const step = x - prevX;
+      let peak = 0;
+      for (let j = i; j < Math.min(i + 40, rows.length); j++) {
+        if (rows[j][1] !== x) break;
+        const past = (rows[j][2] - x) / step; // >0 means overshot the new target
+        if (past > peak) peak = past;
+      }
+      if (peak > worst) worst = peak;
+    }
+  }
+  return worst * 100;
+});
+
+console.log(`simulated peak overshoot: ${overshoot.toFixed(1)}%  (ζ=${IDENTIFIED_ZETA} predicts ~79%)`);
+if (overshoot < 55) {
+  fail(`simulated response only overshot ${overshoot.toFixed(1)}% -- far less springy than the identified ζ predicts`);
+}
+
+if (errors.length) fail(`page errors: ${errors.join(' | ')}`);
+await browser.close();
+await app.close();
+
+if (failed) {
+  console.error('\nSimulation test FAILED');
+  process.exitCode = 1;
+} else {
+  console.log('\nSimulation test passed: identification updates the simulated system, and it rings.');
+}
