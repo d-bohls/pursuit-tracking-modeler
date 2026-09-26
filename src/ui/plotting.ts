@@ -61,6 +61,15 @@ function prepare(canvas: HTMLCanvasElement, surface: string) {
   return { ctx, width: w, height: h };
 }
 
+/**
+ * Blanks a plot. Needed because the canvases keep whatever was last drawn on
+ * them: a caller that simply returns early when it has nothing to show leaves
+ * the previous trial's plot on screen, claiming to describe data that is gone.
+ */
+export function clearPlot(canvas: HTMLCanvasElement) {
+  prepare(canvas, chromeOf(canvas).surface);
+}
+
 export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: FrequencyPlotSeries) {
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);

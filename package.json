@@ -17,6 +17,7 @@
     "simulation-test": "node test/simulation-test.mjs"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "tsx": "^4.21.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.0"

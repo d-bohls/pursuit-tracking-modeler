@@ -7,7 +7,7 @@ import {
   type SimulationMode,
   type SimulationModel,
 } from './ui/experiment';
-import { plotFrequencyResponse, plotPoleLocations, plotTrialSparkline } from './ui/plotting';
+import { clearPlot, plotFrequencyResponse, plotPoleLocations, plotTrialSparkline } from './ui/plotting';
 import {
   analyzeTrial,
   aggregateTrials,
@@ -27,23 +27,24 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const graphCanvas = $<HTMLCanvasElement>('graph');
 const statusEl = $<HTMLParagraphElement>('status');
 const stageActions = $<HTMLDivElement>('stageActions');
-const stageHint = $<HTMLParagraphElement>('stageHint');
-const stageStop = $<HTMLDivElement>('stageStop');
-const stopBtn = $<HTMLButtonElement>('stopBtn');
+const stageHint = $<HTMLUListElement>('stageHint');
+const runHint = $<HTMLUListElement>('runHint');
+const stageFlash = $<HTMLParagraphElement>('stageFlash');
 const recordBtn = $<HTMLButtonElement>('recordBtn');
 const simulateBtn = $<HTMLButtonElement>('simulateBtn');
 const settingsBtn = $<HTMLButtonElement>('settingsBtn');
 const settingsDialog = $<HTMLDialogElement>('settingsDialog');
 const dataDialog = $<HTMLDialogElement>('dataDialog');
 const dataBtn = $<HTMLButtonElement>('dataBtn');
-const themeBtn = $<HTMLButtonElement>('themeBtn');
+const themeGroup = $<HTMLDivElement>('themeGroup');
 const paceGroup = $<HTMLDivElement>('paceGroup');
+const resetSettingsBtn = $<HTMLButtonElement>('resetSettingsBtn');
 const legendModel = document.querySelector('.legend-model') as HTMLLIElement;
 
 const readoutEl = $<HTMLDivElement>('readout');
 const readoutSource = $<HTMLParagraphElement>('readoutSource');
 const filmstripEl = $<HTMLDivElement>('filmstrip');
-const inspectedLabel = $<HTMLSpanElement>('inspectedTrial');
+const trialDetailHeading = $<HTMLHeadingElement>('trialDetailHeading');
 const freqGraph = $<HTMLCanvasElement>('freqGraph');
 const poleGraph = $<HTMLCanvasElement>('poleGraph');
 
@@ -76,6 +77,9 @@ let identifiedYet = false;
 /** The sample period the trials on screen were identified at. */
 let analysisSamplePeriodMs = 100;
 let syncHandle: ReturnType<typeof setTimeout> | null = null;
+/** A run has started but has not yet earned the right to clear the old one. */
+let pendingReset = false;
+let pendingSamplePeriodMs = 100;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -85,13 +89,27 @@ function clamp(v: number, min: number, max: number) {
 
 const STORE_KEY = 'tracking-lab.settings';
 
+/** 'system' follows the OS; the other two pin the page regardless of it. */
+type ThemeChoice = 'light' | 'dark' | 'system';
+let themeChoice: ThemeChoice = 'system';
+
+/** What the controls read with nothing stored, and what Reset restores. */
+const DEFAULT_SETTINGS = {
+  trialPeriodMs: 4000,
+  samplePeriodMs: 100,
+  simulationMode: 'none',
+  showModel: false,
+  discretePoints: false,
+  theme: 'system' as ThemeChoice,
+};
+
 interface StoredSettings {
   trialPeriodMs?: number;
   samplePeriodMs?: number;
   simulationMode?: string;
   showModel?: boolean;
   discretePoints?: boolean;
-  theme?: 'light' | 'dark';
+  theme?: ThemeChoice;
 }
 
 /**
@@ -117,8 +135,7 @@ function saveSettings() {
       showModel: showModelCheckbox.checked,
       discretePoints: discretePointsCheckbox.checked,
     };
-    const theme = document.documentElement.getAttribute('data-theme');
-    if (theme === 'light' || theme === 'dark') stored.theme = theme;
+    stored.theme = themeChoice;
     localStorage.setItem(STORE_KEY, JSON.stringify(stored));
   } catch {
     /* nothing to do -- the app works fine without a memory */
@@ -135,13 +152,24 @@ function applyStoredSettings() {
   }
   if (typeof s.showModel === 'boolean') showModelCheckbox.checked = s.showModel;
   if (typeof s.discretePoints === 'boolean') discretePointsCheckbox.checked = s.discretePoints;
-  // Dark is the default, not the OS's preference: index.html ships with the
-  // attribute already set so there is no flash of light before this runs, and
-  // a stored choice overrides it either way.
-  const theme = s.theme ?? 'dark';
-  document.documentElement.setAttribute('data-theme', theme);
-  themeBtn.textContent = theme === 'dark' ? 'Light' : 'Dark';
-  themeBtn.setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+  // Default to the OS preference. index.html therefore ships with NO
+  // data-theme, so the prefers-color-scheme block styles the very first paint
+  // and there is no flash before this runs.
+  applyTheme(s.theme ?? DEFAULT_SETTINGS.theme);
+}
+
+/**
+ * 'light' and 'dark' pin the page with data-theme. 'system' removes the
+ * attribute and lets the prefers-color-scheme block in style.css decide,
+ * which is why that block has to stay even though dark is the default.
+ */
+function applyTheme(choice: ThemeChoice) {
+  themeChoice = choice;
+  if (choice === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', choice);
+  for (const b of themeGroup.querySelectorAll('button')) {
+    b.setAttribute('aria-checked', String(b.getAttribute('data-theme') === choice));
+  }
 }
 
 applyStoredSettings();
@@ -160,62 +188,78 @@ function currentConfig(): ExperimentConfig {
 const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
   onState: renderState,
   onStep: scheduleSync,
-  onGraphPress: promptToStop,
+  onGraphPress: stopRun,
+  onTouchStart: startRecording,
   onEnd: ({ xs, ys }) => {
-    lastSamples = { xs, ys };
-    displaySamples(xs, ys);
-    saveDataBtn.disabled = xs.length === 0;
+    // A run that captured nothing must not replace the recording that was
+    // already loaded. Starting it cleared the trials, so rebuild them from the
+    // recording that is being kept -- otherwise the app is left holding data
+    // with no analysis of it.
+    // Decide from THIS run's samples, not from pendingReset: a run can end
+    // between its last trial closing and the sync that would have noticed,
+    // and that run has still earned its keep.
+    const produced = parseTrials(xs, ys).length > 0;
+    if (produced) {
+      if (pendingReset) clearAnalysis(pendingSamplePeriodMs);
+      lastSamples = { xs, ys };
+      displaySamples(xs, ys);
+      saveDataBtn.disabled = false;
+    } else {
+      // Nothing analysable: throw the run away and keep what was on screen.
+      pendingReset = false;
+    }
     syncAnalysis();
+    statusEl.textContent = produced
+      ? `Stopped - ${xs.length} samples - ${trialCount(trials.length)}`
+      : xs.length < 2
+        ? 'Stopped - nothing recorded'
+        : 'Stopped - no complete trials';
     // The 'finished' state is emitted BEFORE this callback, so the render that
     // went with it still saw the previous recording -- or none at all. Re-check
     // now that there is something to replay.
     updateActionAvailability();
+    // Announced from here rather than from renderState: only now are the
+    // finished run's trials counted, and onEnd fires for recordings only, so
+    // a replay never claims to have recorded anything.
+    if (produced) flash(`Recording finished · ${trialCount(trials.length)}`);
+    else if (xs.length < 2) flash('Nothing recorded');
+    else flash('No complete trials · previous recording kept');
   },
 });
 
+/** How long the end-of-run message stays up before it starts fading. */
+const FLASH_HOLD_MS = 2400;
+let flashHoldHandle: ReturnType<typeof setTimeout> | null = null;
+let flashHideHandle: ReturnType<typeof setTimeout> | null = null;
+
+/** Says one thing, big, across the plot, then fades itself out. */
+function flash(message: string) {
+  if (flashHoldHandle) clearTimeout(flashHoldHandle);
+  if (flashHideHandle) clearTimeout(flashHideHandle);
+  stageFlash.textContent = message;
+  stageFlash.hidden = false;
+  stageFlash.dataset.fading = 'false';
+  flashHoldHandle = setTimeout(() => {
+    stageFlash.dataset.fading = 'true';
+    // Outlasts the 600ms opacity transition; under prefers-reduced-motion
+    // there is no transition and this is simply when it disappears.
+    flashHideHandle = setTimeout(() => (stageFlash.hidden = true), 650);
+  }, FLASH_HOLD_MS);
+}
+
 /**
- * How long the Stop prompt waits before withdrawing itself. Long enough to
- * read and act on, short enough that a misclick doesn't leave the plot dimmed
- * for the rest of a run.
+ * A press on a running plot stops it. Nothing is confirmed: the space bar
+ * does the same, and Record starts again. The cost is that a stray click on
+ * the plot -- where your pointer already is while tracking -- ends the run.
  */
-const STOP_PROMPT_MS = 4000;
-let stopPromptHandle: ReturnType<typeof setTimeout> | null = null;
-let stopFadeHandle: ReturnType<typeof setTimeout> | null = null;
-
-/** A press on a running plot offers a Stop instead of taking one. */
-function promptToStop() {
-  if (!experiment.isActive()) return;
-  if (!stageStop.hidden && stageStop.dataset.fading !== 'true') {
-    // Pressed again while the prompt is up -- treat that as dismissing it.
-    hideStopPrompt();
-    return;
-  }
-  clearStopTimers();
-  stageStop.hidden = false;
-  stageStop.dataset.fading = 'false';
-  stopBtn.focus();
-  stopPromptHandle = setTimeout(() => {
-    stageStop.dataset.fading = 'true';
-    stopFadeHandle = setTimeout(() => {
-      stageStop.hidden = true;
-      stageStop.dataset.fading = 'false';
-    }, 350);
-  }, STOP_PROMPT_MS);
-}
-
-function clearStopTimers() {
-  if (stopPromptHandle) clearTimeout(stopPromptHandle);
-  if (stopFadeHandle) clearTimeout(stopFadeHandle);
-  stopPromptHandle = stopFadeHandle = null;
-}
-
-function hideStopPrompt() {
-  clearStopTimers();
-  stageStop.hidden = true;
-  stageStop.dataset.fading = 'false';
+function stopRun() {
+  if (experiment.isActive()) experiment.stop();
 }
 
 /* ------------------------------------------------------------ live state */
+
+/** The phase of the previous render, so 'finished' knows what just ended. */
+let previousPhase: ExperimentState['phase'] = 'idle';
 
 function renderState(state: ExperimentState) {
   const recording = state.phase === 'recording';
@@ -226,28 +270,99 @@ function renderState(state: ExperimentState) {
   // plot is the thing to look at, so they get out of the way.
   stageActions.hidden = running;
   stageHint.hidden = running;
+  runHint.hidden = !running;
+  if (recording) {
+    setList(runHint, [
+      touchFirst
+        ? "Slide your finger up and down to match the target's height"
+        : "Move your pointer up and down to match the target's height",
+      touchFirst ? 'Lift your finger to stop recording' : 'Click anywhere to stop recording',
+    ]);
+  } else if (replaying) {
+    setList(runHint, [touchFirst ? 'Tap to stop the replay' : 'Click anywhere to stop the replay']);
+  }
   statusEl.dataset.recording = String(recording);
   updateActionAvailability();
   // A replay always draws the model line, whatever the recording-time setting.
   legendModel.hidden = !(replaying || (showModelCheckbox.checked && simulationModeSelect.value === 'none'));
 
   if (recording) {
-    const secs = Math.floor(state.elapsedMs / 1000);
-    statusEl.textContent = `Recording · ${state.steps} step${state.steps === 1 ? '' : 's'} · ${secs}s`;
+    // `steps` counts target jumps, and the trial under way is the one that
+    // began at the last jump -- so after three jumps you are recording the
+    // third trial, and before the first there is nothing yet.
+    const which = state.steps === 0 ? 'no trials yet' : `${ordinal(state.steps)} trial`;
+    statusEl.textContent = `Recording - ${which} - ${elapsed(state.elapsedMs)}`;
   } else if (replaying) {
-    statusEl.textContent = `Replaying with the model · ${Math.round(state.progress * 100)}%`;
+    // "with the model" was redundant -- the legend names the model line right
+    // beside this -- and it was what pushed the label into an ellipsis.
+    statusEl.textContent = `Replaying - ${Math.round(state.progress * 100)}% - ${elapsed(state.elapsedMs)}`;
   } else if (state.phase === 'finished') {
-    if (state.samples > 0) statusEl.textContent = `Stopped · ${state.samples} samples`;
-    stageHint.textContent = 'Record again, or Simulate to replay that run with the model beside it.';
-    hideStopPrompt();
+    // A finished RECORDING gets its line from onEnd instead, which runs a
+    // moment later and is the only place the run's trials have been counted.
+    if (previousPhase === 'replaying') statusEl.textContent = 'Replay ended';
+    setHint([
+      touchFirst ? 'Touch and hold the plot to record again' : 'Record again to start a new run',
+      'Simulate replays that run with the model beside it',
+    ]);
   } else {
     statusEl.textContent = 'Ready';
   }
+
+  previousPhase = state.phase;
 }
+
+/**
+ * Running time to a tenth of a second, switching to m:ss.s past a minute.
+ * The tenth is why onSampleTick emits state: a whole-second reading updated
+ * only on trial ticks looks stopped between steps.
+ */
+function elapsed(ms: number): string {
+  const total = ms / 1000;
+  if (total < 60) return `${total.toFixed(1)}s`;
+  const mins = Math.floor(total / 60);
+  return `${mins}:${(total - mins * 60).toFixed(1).padStart(4, '0')}`;
+}
+
+/** 1st, 2nd, 3rd, 4th ... */
+function ordinal(n: number): string {
+  const teens = n % 100;
+  if (teens >= 11 && teens <= 13) return `${n}th`;
+  const last = n % 10;
+  return `${n}${last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th'}`;
+}
+
+const trialCount = (n: number) => `${n} trial${n === 1 ? '' : 's'}`;
+
+/**
+ * True where the primary input cannot hover and is coarse -- a touchscreen.
+ * The copy follows this, while the BEHAVIOUR follows each event's own
+ * pointerType, so a hybrid machine reads touch wording and still works with
+ * its mouse.
+ */
+const touchFirst = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+/** Fills a hint list. Both plot hints are lists, so both go through here. */
+function setList(list: HTMLUListElement, items: string[]) {
+  list.innerHTML = '';
+  for (const text of items) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    list.appendChild(li);
+  }
+}
+
+const setHint = (items: string[]) => setList(stageHint, items);
 
 /** Simulate needs something to replay, and nothing may run over a live run. */
 function updateActionAvailability() {
-  simulateBtn.disabled = experiment.isActive() || !lastSamples || lastSamples.xs.length < 2;
+  const running = experiment.isActive();
+  const hasRun = !!lastSamples && lastSamples.xs.length >= 2;
+  simulateBtn.setAttribute('aria-disabled', String(running || !hasRun));
+  simulateBtn.title = !hasRun
+    ? 'Nothing to replay yet — record a run first, or load a data file from Recorded data'
+    : running
+      ? 'Wait for the current run to finish'
+      : "Replay that run with the identified model's response to the same target beside it";
 }
 
 /**
@@ -265,10 +380,17 @@ function scheduleSync() {
  * (~13 ms), rather than re-identifying the whole recording every time.
  */
 function syncAnalysis() {
+  const live = experiment.isActive() && pendingReset;
   const { xs, ys } = experiment.isActive() ? experiment.getSamples() : lastSamples ?? { xs: new Float64Array(), ys: new Float64Array() };
   if (xs.length === 0) return;
 
   const raw = parseTrials(xs, ys);
+
+  // The previous run stays on screen until this one has something to replace
+  // it WITH. Pressing Record used to blank the readout instantly, so a run
+  // that turned out to be a misfire took the last good analysis with it.
+  if (live && raw.length > 0) clearAnalysis(pendingSamplePeriodMs);
+
   if (raw.length <= trials.length) {
     renderResults();
     return;
@@ -283,11 +405,29 @@ function syncAnalysis() {
   renderResults();
 }
 
-function resetAnalysis(samplePeriodMs: number) {
+/** Throws the current analysis away immediately. */
+function clearAnalysis(samplePeriodMs: number) {
+  // Drop any sync the previous run had queued, so it cannot land on the state
+  // this reset is establishing.
+  if (syncHandle) clearTimeout(syncHandle);
+  syncHandle = null;
   trials = [];
   excluded.clear();
   inspected = 0;
   analysisSamplePeriodMs = samplePeriodMs;
+  pendingReset = false;
+}
+
+/**
+ * Arms a reset for the next run without performing it. syncAnalysis carries
+ * it out the moment that run produces its first trial, which is the first
+ * moment there is anything to show in place of what is on screen.
+ */
+function armReset(samplePeriodMs: number) {
+  if (syncHandle) clearTimeout(syncHandle);
+  syncHandle = null;
+  pendingReset = true;
+  pendingSamplePeriodMs = samplePeriodMs;
 }
 
 /* ------------------------------------------------------------- rendering */
@@ -442,6 +582,14 @@ function renderFilmstrip() {
   }
 
   const bounds = outlierBounds();
+
+  // A rebuild still happens when trials arrive mid-run, and it can land while
+  // someone is working through the strip, so put focus back where it was.
+  const focused = document.activeElement as HTMLElement | null;
+  const focusedCard = focused?.closest('.trial-card');
+  const focusedIndex = focusedCard ? [...filmstripEl.children].indexOf(focusedCard) : -1;
+  const focusedWasCheckbox = focused?.classList.contains('trial-include') ?? false;
+
   filmstripEl.innerHTML = '';
 
   trials.forEach((t, i) => {
@@ -472,9 +620,14 @@ function renderFilmstrip() {
       `RMS ${t.fit2Rms.toFixed(1)} px on a ${t.stepSize.toFixed(0)} px step` +
       (kind === 'poor' ? ' — fits far worse than the other trials' : '') +
       (kind === 'degenerate' ? ' — fits far better than is plausible; little to measure here' : '');
+    // Update in place rather than rebuilding the strip. A rebuild replaces the
+    // very node being operated, which drops keyboard focus to the body -- so
+    // excluding three trials in a row meant tabbing back in three times.
     inspect.addEventListener('click', () => {
       inspected = i;
-      renderFilmstrip();
+      for (const other of filmstripEl.querySelectorAll('.trial-inspect')) {
+        other.setAttribute('aria-pressed', String(other === inspect));
+      }
       renderPlots();
     });
 
@@ -486,23 +639,50 @@ function renderFilmstrip() {
     box.addEventListener('change', () => {
       if (box.checked) excluded.delete(i);
       else excluded.add(i);
+      // Only this card's dimming and the summary above change: the outlier
+      // marks come from outlierBounds(), which reads every trial regardless of
+      // what is excluded. So no rebuild, and focus stays on the checkbox.
+      card.dataset.excluded = String(excluded.has(i));
       pushModelToSimulation();
-      renderResults();
+      renderReadout();
     });
 
     card.append(inspect, box);
     filmstripEl.appendChild(card);
     plotTrialSparkline(inspect.querySelector('canvas') as HTMLCanvasElement, t.trial.xn, t.trial.yn);
   });
+
+  if (focusedIndex >= 0) {
+    const card = filmstripEl.children[focusedIndex] as HTMLElement | undefined;
+    const target = card?.querySelector<HTMLElement>(focusedWasCheckbox ? '.trial-include' : '.trial-inspect');
+    target?.focus();
+  }
 }
 
-function renderPlots() {
+/** The trial the detail plots currently show, so they are not redrawn for nothing. */
+let plottedTrial: TrialAnalysis | null = null;
+
+/**
+ * @param force redraw even if the same trial is already plotted -- needed
+ *              after a theme change, which the canvases cannot inherit.
+ */
+function renderPlots(force = false) {
   const t = trials[inspected];
   if (!t) {
-    inspectedLabel.textContent = '—';
+    // Canvases keep their last drawing, so returning early here is what left
+    // a previous run's plots on screen under a "Trial Details" heading after
+    // a run that produced no trials at all.
+    trialDetailHeading.textContent = 'Trial Details';
+    if (plottedTrial) {
+      clearPlot(freqGraph);
+      clearPlot(poleGraph);
+      plottedTrial = null;
+    }
     return;
   }
-  inspectedLabel.textContent = String(inspected + 1);
+  if (t === plottedTrial && !force) return;
+  plottedTrial = t;
+  trialDetailHeading.textContent = `Trial ${inspected + 1} Details`;
 
   // Measured response: |H[k]| of the DFT of this trial's deconvolved h[n].
   const Hk = dft(t.hn);
@@ -541,24 +721,32 @@ function displaySamples(xs: Float64Array, ys: Float64Array) {
 
 function startRecording() {
   if (experiment.isActive()) return;
-  hideStopPrompt();
   // Record is about to be hidden. Leaving focus on it would both strand the
   // focus ring on a hidden element and swallow the space bar, which the
   // keydown handler ignores while a button has focus -- so the one key that
   // stops a run would stop working the moment you started one with a click.
   (document.activeElement as HTMLElement | null)?.blur();
-  resetAnalysis(currentConfig().samplePeriodMs);
+  armReset(currentConfig().samplePeriodMs);
   experiment.begin();
 }
 
 recordBtn.addEventListener('click', startRecording);
 
+if (touchFirst) {
+  setHint([
+    'Touch and hold the plot to record; lift to stop',
+    'Simulate replays your last run with the model beside it',
+  ]);
+  recordBtn.title = 'Record a new run — or just touch and hold the plot';
+}
+
 // Simulate replays the run that is already on screen -- your target, your
 // response, and the identified model's response to the same target. It is a
 // playback, so nothing is recorded and the analysis is left alone.
 simulateBtn.addEventListener('click', () => {
+  // aria-disabled does not block clicks the way disabled does, so refuse here.
+  if (simulateBtn.getAttribute('aria-disabled') === 'true') return;
   if (!lastSamples || experiment.isActive()) return;
-  hideStopPrompt();
   experiment.startReplay(lastSamples.xs, lastSamples.ys);
 });
 
@@ -583,27 +771,6 @@ function closeOnBackdropClick(dialog: HTMLDialogElement) {
 closeOnBackdropClick(settingsDialog);
 closeOnBackdropClick(dataDialog);
 
-// Same for the Stop prompt: anything other than Stop itself puts it away and
-// leaves the run going -- the dimmed plot, or anywhere else on the page.
-stageStop.addEventListener('click', (e) => {
-  if (e.target !== stopBtn) hideStopPrompt();
-});
-
-document.addEventListener(
-  'pointerdown',
-  (e) => {
-    if (stageStop.hidden) return;
-    if (e.target === stopBtn || stageStop.contains(e.target as Node)) return;
-    hideStopPrompt();
-  },
-  true,
-);
-
-stopBtn.addEventListener('click', () => {
-  experiment.stop();
-  hideStopPrompt();
-});
-
 document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space') return;
   const el = document.activeElement;
@@ -616,7 +783,6 @@ document.addEventListener('keydown', (e) => {
   // it stops straight away instead of asking.
   if (experiment.isActive()) {
     experiment.stop();
-    hideStopPrompt();
   } else {
     startRecording();
   }
@@ -647,14 +813,49 @@ function syncPaceButtons() {
   }
 }
 
-themeBtn.addEventListener('click', () => {
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
-  themeBtn.textContent = dark ? 'Dark' : 'Light';
-  themeBtn.setAttribute('aria-label', dark ? 'Switch to dark theme' : 'Switch to light theme');
+/** Repaint everything a CSS colour change cannot reach: the canvases. */
+function repaintForTheme() {
   experiment.refreshTheme();
-  renderResults();
+  renderReadout();
+  renderFilmstrip();
+  renderPlots(true);
+}
+
+resetSettingsBtn.addEventListener('click', () => {
+  trialPeriodInput.value = String(DEFAULT_SETTINGS.trialPeriodMs);
+  samplePeriodInput.value = String(DEFAULT_SETTINGS.samplePeriodMs);
+  simulationModeSelect.value = DEFAULT_SETTINGS.simulationMode;
+  showModelCheckbox.checked = DEFAULT_SETTINGS.showModel;
+  discretePointsCheckbox.checked = DEFAULT_SETTINGS.discretePoints;
+  applyTheme(DEFAULT_SETTINGS.theme);
+
+  experiment.updateConfig(currentConfig());
+  syncPaceButtons();
+  legendModel.hidden = !(showModelCheckbox.checked && simulationModeSelect.value === 'none');
+  repaintForTheme();
+
+  // Forget the stored settings outright rather than storing the defaults, so
+  // a later change of default is picked up instead of being overridden by a
+  // saved copy of the old one.
+  try {
+    localStorage.removeItem(STORE_KEY);
+  } catch {
+    /* nothing stored, nothing to forget */
+  }
+});
+
+themeGroup.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('button[data-theme]') as HTMLButtonElement | null;
+  if (!btn) return;
+  applyTheme(btn.dataset.theme as ThemeChoice);
+  repaintForTheme();
   saveSettings();
+});
+
+// Under 'system' the page has no data-theme, so an OS flip restyles the CSS
+// but leaves the canvases painted in the old palette until they are redrawn.
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (themeChoice === 'system') repaintForTheme();
 });
 
 
@@ -683,11 +884,11 @@ fileInput.addEventListener('change', async () => {
     lastSamples = { xs, ys };
     displaySamples(xs, ys);
     saveDataBtn.disabled = false;
-    resetAnalysis(currentConfig().samplePeriodMs);
+    clearAnalysis(currentConfig().samplePeriodMs);
     syncAnalysis();
     updateActionAvailability();
     statusEl.textContent = `Loaded ${xs.length} samples from ${file.name}`;
-    stageHint.textContent = 'Simulate replays this recording with the model beside it.';
+    setHint(['Simulate replays this recording with the model beside it', 'Record starts a new run of your own']);
   } catch (err) {
     statusEl.textContent = (err as Error).message;
   }
@@ -697,3 +898,6 @@ syncPaceButtons();
 legendModel.hidden = !(showModelCheckbox.checked && simulationModeSelect.value === 'none');
 renderSimModelInfo();
 renderResults();
+// Otherwise Simulate starts life dimmed with no tooltip to explain why: the
+// availability pass only runs on a state change, and none has happened yet.
+updateActionAvailability();

@@ -140,7 +140,9 @@ button {
 }
 button:hover { border-color: var(--ink-muted); }
 button:focus-visible { outline: 2px solid var(--series-target); outline-offset: 2px; }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
+button:disabled,
+button[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+button[aria-disabled="true"]:hover { border-color: var(--line-strong); }
 
 button.primary {
   background: var(--ink);
@@ -188,11 +190,12 @@ button.primary[data-recording="true"] {
 .stage-chrome {
   position: absolute;
   inset: 10px 12px auto 12px;
-  display: flex;
+  /* Three columns with equal outer tracks, so the status sits on the plot's
+   * centre line rather than in whatever room the legend leaves it. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 4px 12px;
-  flex-wrap: wrap;
   pointer-events: none;
   font-size: 0.78rem;
 }
@@ -202,26 +205,55 @@ button.primary[data-recording="true"] {
 /* An author `display` beats the UA's [hidden] rule, so hiding a legend entry
  * has to be spelled out or `hidden` silently does nothing. */
 .legend li[hidden] { display: none; }
-.swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-.swatch-target { background: var(--series-target); }
-.swatch-you { background: var(--series-you); }
+/* Line plus the mark that sits at the pen, so the legend reads as the same
+ * object the plot draws: square target, round you, diamond model. */
+.swatch {
+  position: relative;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  display: inline-block;
+  margin-right: 5px;
+  background: var(--mark);
+}
+.swatch::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  background: var(--mark);
+  transform: translate(50%, -50%);
+}
+.swatch-target { --mark: var(--series-target); }
+.swatch-target::after { border-radius: 1px; }
+.swatch-you { --mark: var(--series-you); }
+.swatch-you::after { border-radius: 50%; }
 .swatch-model {
+  --mark: var(--series-model);
   background: repeating-linear-gradient(90deg, var(--series-model) 0 5px, transparent 5px 9px);
 }
+.swatch-model::after { transform: translate(50%, -50%) rotate(45deg); }
 
 /* One line, always. The status can carry a loaded file's name, which is
  * arbitrarily long -- left to wrap it walks down over the plot and through
  * the legend beside it. */
 .status {
+  grid-column: 2;
   margin: 0;
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  /* Two lines, then ellipsis. A single clamped line turned every status into
+   * "Replaying with the model - 3..." on a narrow plot; a loaded file's name
+   * still needs a stop, so it wraps once and then truncates. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
-  margin-left: auto;
-  text-align: right;
+  text-align: center;
 }
 .status[data-recording="true"] { color: var(--critical); font-weight: 600; }
 .status[data-recording="true"]::before {
@@ -241,52 +273,106 @@ button.primary[data-recording="true"] {
  * up in a toolbar, so the first trial isn't spent travelling to the line.
  * The hint is positioned separately, at the foot of the plot, so its height
  * cannot push the button row off centre. */
+/* Stacked, always: a column is one button wide instead of three, which is
+ * what buys the labels beside it any room. Record is the middle child, so it
+ * still sits on the plot's vertical centre -- the only axis that matters,
+ * since a run records the pointer's HEIGHT and nothing else.
+ *
+ * It stays horizontally centred at every width. Sliding it left to buy the
+ * labels more room was tried and looked worse than simply letting them drop
+ * below the buttons on a narrow plot. */
+.stage {
+  --actions-width: 7.5rem;
+}
+
 .stage-actions {
   position: absolute;
-  inset: 0;
+  left: calc(50% - (var(--actions-width) / 2));
+  width: var(--actions-width);
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
 .stage-actions[hidden] { display: none; }
-.stage-actions button { min-width: 6rem; }
+.stage-actions button { min-width: 0; width: 100%; }
 
-/* Record is the MIDDLE child in both directions, so it stays on the plot's
- * centre point either way. Stacking below this width keeps three 6rem buttons
- * from filling a narrow plot edge to edge. */
-@media (max-width: 520px) {
-  .stage-actions { flex-direction: column; gap: 8px; }
-}
-
-.stage-hint {
+/* The two plot hints share one placement. On a wide plot they sit beside the
+ * button block, vertically centred on it; where there is not room for that
+ * they drop to the foot of the plot and use its full width.
+ *
+ * They are positioned rather than laid out beside the buttons so that the
+ * button column keeps its own placement; they start one gap past its right
+ * edge, wherever that has slid to. */
+.stage-hint,
+.stage-running-hint {
   position: absolute;
-  left: 12px;
-  right: 12px;
+  left: 16px;
+  right: 16px;
   bottom: 10px;
-  margin: 0;
-  text-align: center;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: min(520px, 100%);
+  padding: 0 0 0 18px;
+  list-style: disc;
+  text-align: left;
   font-size: 0.78rem;
+  line-height: 1.4;
   color: var(--ink-muted);
   pointer-events: none;
 }
+.stage-hint li + li,
+.stage-running-hint li + li { margin-top: 3px; }
+/* Explicit: an author display on a list would otherwise beat the UA's
+ * [hidden] rule, the way it did for the legend entries. */
+.stage-hint[hidden],
+.stage-running-hint[hidden] { display: none; }
+
+/* Beside the column, starting just past it. Below this width the remaining
+ * strip is too narrow for sentences, so they drop to the foot of the plot
+ * and take its full width instead. */
+@media (min-width: 640px) {
+  .stage-hint,
+  .stage-running-hint {
+    left: calc(50% + (var(--actions-width) / 2) + 16px);
+    right: 24px;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* Said once, loudly, then gone: confirmation that the run ended and what it
+ * produced, without leaving anything on screen to dismiss. */
+.stage-flash {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  /* Centred in the TOP half of the plot, clear of the legend along the top
+   * edge and of the hints below. */
+  top: 25%;
+  transform: translateY(-50%);
+  margin: 0;
+  text-align: center;
+  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 600ms ease;
+}
+.stage-flash[hidden] { display: none; }
+.stage-flash[data-fading="true"] { opacity: 0; }
+/* Explicit: an author display on a list would otherwise beat the UA's
+ * [hidden] rule, the way it did for the legend entries. */
 .stage-hint[hidden] { display: none; }
 
-/* Stopping is deliberate: a press on a running plot dims it and offers this,
- * rather than ending the run on a stray click. It withdraws by itself if you
- * meant nothing by the click -- see STOP_PROMPT_MS in main.ts. */
-.stage-stop {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  background: color-mix(in srgb, var(--plot-surface) 78%, transparent);
-  opacity: 1;
-  transition: opacity 320ms ease;
-}
-.stage-stop[hidden] { display: none; }
-.stage-stop[data-fading="true"] { opacity: 0; }
-.stage-stop button { min-width: 7rem; }
 
 /* ------------------------------------------------------------------ deck */
 
@@ -560,6 +646,7 @@ dialog.settings::backdrop { background: rgba(0, 0, 0, 0.45); }
 .settings-head h2 { margin: 0; font-size: 1rem; }
 
 .settings-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.settings-footer { display: flex; justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 14px; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 
 @media (prefers-reduced-motion: reduce) {

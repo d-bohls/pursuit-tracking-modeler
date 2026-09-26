@@ -111,8 +111,13 @@ if ((await page.locator('.details-line').textContent()) !== before) {
 }
 
 // 7. the plots actually drew something (non-blank canvases)
+// .first(): the sparkline selector matches every trial card, and a bare
+// locator with more than one match is a strict-mode error.
 const canvasHasInk = (selector) =>
-  page.locator(selector).evaluate((c) => {
+  page
+    .locator(selector)
+    .first()
+    .evaluate((c) => {
     const ctx = c.getContext('2d');
     const { data } = ctx.getImageData(0, 0, c.width, c.height);
     const [r0, g0, b0] = [data[0], data[1], data[2]];
@@ -131,11 +136,18 @@ const surfaceOf = (selector) =>
     const d = c.getContext('2d').getImageData(2, 2, 1, 1).data;
     return `${d[0]},${d[1]},${d[2]}`;
   });
+// Compare the two pinned themes against each other rather than against the
+// default, which follows the OS and so differs between machines.
+await page.locator('#settingsBtn').click();
+await page.waitForTimeout(200);
+await page.locator('#themeGroup button[data-theme="light"]').click();
+await page.waitForTimeout(400);
 const lightSurface = await surfaceOf('#freqGraph');
-await page.locator('#themeBtn').click();
+await page.locator('#themeGroup button[data-theme="dark"]').click();
 await page.waitForTimeout(400);
 const darkSurface = await surfaceOf('#freqGraph');
-if (lightSurface === darkSurface) fail(`plot surface did not follow the theme (still ${lightSurface})`);
+await page.locator('#settingsDialog button[value="close"]').click();
+if (lightSurface === darkSurface) fail(`plot surface did not follow the theme (both ${lightSurface})`);
 
 if (consoleErrors.length) fail(`console errors during run: ${consoleErrors.join(' | ')}`);
 

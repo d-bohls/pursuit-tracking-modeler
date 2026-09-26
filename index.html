@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,9 +14,6 @@
         <p>EE&nbsp;351M &mdash; human tracking system identification</p>
       </div>
 
-      <div class="topbar-actions">
-        <button type="button" id="themeBtn" class="ghost" aria-label="Switch to dark theme" title="Switch theme">Dark</button>
-      </div>
     </header>
 
     <div class="workspace">
@@ -36,15 +33,22 @@
            at the middle of the plot, so the pointer is already at the
            starting position the instant Record is clicked. -->
       <div class="stage-actions" id="stageActions">
-        <button type="button" id="settingsBtn">Settings</button>
-        <button type="button" id="recordBtn" class="primary">Record</button>
-        <button type="button" id="simulateBtn" disabled>Simulate</button>
+        <button type="button" id="settingsBtn" title="Trial pace, sample period, and what drives the tracker">Settings</button>
+        <button type="button" id="recordBtn" class="primary" title="Record a new run — track the target with your pointer (space bar also starts and stops)">Record</button>
+        <!-- aria-disabled rather than disabled: a truly disabled control gets
+             no pointer events in Chrome, so its tooltip -- the one explaining
+             why it is unavailable -- would never appear. -->
+        <button type="button" id="simulateBtn" aria-disabled="true">Simulate</button>
       </div>
-      <p class="stage-hint" id="stageHint">Record tracks your pointer. Simulate replays your last run with the model beside it.</p>
+      <!-- Lives in the empty half of the plot: the pen is anchored at the
+           midpoint, so nothing is ever drawn to the right of it. -->
+      <ul class="stage-running-hint" id="runHint" hidden></ul>
+      <p class="stage-flash" id="stageFlash" hidden></p>
 
-      <div class="stage-stop" id="stageStop" hidden>
-        <button type="button" id="stopBtn" class="primary">Stop</button>
-      </div>
+      <ul class="stage-hint" id="stageHint">
+        <li>Record tracks your pointer height</li>
+        <li>Simulate replays your last run with the model beside it</li>
+      </ul>
     </section>
 
     <main class="deck">
@@ -63,7 +67,7 @@
           <h2>Trials</h2>
           <div class="card-head-right">
             <p class="card-note">Untick a trial to leave it out of the model</p>
-            <button type="button" id="dataBtn" class="ghost">Recorded data&hellip;</button>
+            <button type="button" id="dataBtn" class="ghost" title="Save this recording, load a data file, or read the raw samples">Recorded data&hellip;</button>
           </div>
         </header>
         <div id="filmstrip" class="filmstrip">
@@ -72,7 +76,7 @@
 
         <div class="trial-detail">
           <header class="card-head">
-            <h3>Trial <span id="inspectedTrial">&mdash;</span> in detail</h3>
+            <h3 id="trialDetailHeading">Trial Details</h3>
             <p class="card-note">Click a trial above to inspect it</p>
           </header>
           <div class="plots">
@@ -115,6 +119,14 @@
       </form>
       <div class="settings-body">
         <div class="field">
+          <span>Theme</span>
+          <div class="segmented" id="themeGroup" role="radiogroup" aria-label="Theme">
+            <button type="button" role="radio" data-theme="light" aria-checked="false">Light</button>
+            <button type="button" role="radio" data-theme="dark" aria-checked="false">Dark</button>
+            <button type="button" role="radio" data-theme="system" aria-checked="true">System</button>
+          </div>
+        </div>
+        <div class="field">
           <span>Trial pace</span>
           <div class="segmented" id="paceGroup" role="radiogroup" aria-label="Trial pace">
             <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast</button>
@@ -149,6 +161,9 @@
           <span>Discrete points instead of lines</span>
         </label>
         <p class="sim-info" id="simModelInfo"></p>
+        <div class="settings-footer">
+          <button type="button" id="resetSettingsBtn" class="ghost" title="Put every setting on this panel back to its default and forget the stored ones">Reset to defaults</button>
+        </div>
       </div>
     </dialog>
   </div>

@@ -128,6 +128,10 @@ export class TrackingExperiment {
 
   private currentTargetY = this.centerY;
   private currentTrackerY = this.centerY;
+  /** Last pointer height over the plot, or null when it is elsewhere. */
+  private pointerY: number | null = null;
+  /** The finger currently holding a run open, if any. */
+  private touchPointerId: number | null = null;
   private currentModelY = this.centerY;
 
   private xs: number[] = [];
@@ -161,6 +165,8 @@ export class TrackingExperiment {
    *  that means -- it offers a Stop rather than stopping outright, so a
    *  stray click can't destroy a run in progress. */
   private onGraphPress: () => void;
+  /** A finger went down on an idle plot: the page decides to start a run. */
+  private onTouchStart: () => void;
 
   private palette: Palette = {
     surface: '#ffffff',
@@ -184,6 +190,7 @@ export class TrackingExperiment {
       onState: (state: ExperimentState) => void;
       onStep: () => void;
       onGraphPress: () => void;
+      onTouchStart: () => void;
     },
   ) {
     this.canvas = canvas;
@@ -193,22 +200,54 @@ export class TrackingExperiment {
     this.onState = callbacks.onState;
     this.onStep = callbacks.onStep;
     this.onGraphPress = callbacks.onGraphPress;
+    this.onTouchStart = callbacks.onTouchStart;
 
-    canvas.addEventListener('pointerdown', () => {
+    // Touch drives a run by holding: press to start, lift to stop. With a
+    // finger the pointer IS the instrument -- it has to be on the glass to
+    // track at all -- so a tap to stop cannot be told apart from tracking,
+    // and lifting is the one gesture that unambiguously means "done".
+    //
+    // Decided per EVENT, not per device: a laptop with a touchscreen gets
+    // press-and-hold from its screen and click-to-start from its mouse, in
+    // the same session.
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') {
+        if (this.active) return; // already running: the lift will end it
+        this.touchPointerId = e.pointerId;
+        canvas.setPointerCapture(e.pointerId);
+        const rect = canvas.getBoundingClientRect();
+        const v = ((e.clientY - rect.top) / rect.height) * LOGICAL_HEIGHT;
+        this.pointerY = Math.max(0, Math.min(LOGICAL_HEIGHT, v));
+        this.onTouchStart();
+        return;
+      }
       if (this.active) this.onGraphPress();
     });
+
+    const liftEnds = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch' || e.pointerId !== this.touchPointerId) return;
+      this.touchPointerId = null;
+      if (this.phase === 'recording') this.end();
+    };
+    canvas.addEventListener('pointerup', liftEnds);
+    canvas.addEventListener('pointercancel', liftEnds);
     // Pointer, not mouse: a finger on a tablet is a perfectly good tracking
     // experiment, and identifies a visibly different system than a mouse does.
     //
     // Tracking is only live while YOU are the one being recorded. During a
     // replay the plot is a playback of something that already happened, so
     // moving over it must not write into it.
+    //
+    // The pointer's height is followed even when idle, though: begin() needs
+    // it to start the trace where the pointer actually is.
     canvas.addEventListener('pointermove', (e) => {
-      if (this.phase !== 'recording' || this.config.simulationMode !== 'none') return;
       const rect = canvas.getBoundingClientRect();
       const v = ((e.clientY - rect.top) / rect.height) * LOGICAL_HEIGHT;
-      this.currentTrackerY = Math.max(0, Math.min(LOGICAL_HEIGHT, v));
+      this.pointerY = Math.max(0, Math.min(LOGICAL_HEIGHT, v));
+      if (this.phase !== 'recording' || this.config.simulationMode !== 'none') return;
+      this.currentTrackerY = this.pointerY;
     });
+    canvas.addEventListener('pointerleave', () => (this.pointerY = null));
 
     this.refreshTheme();
     this.resize();
@@ -307,9 +346,21 @@ export class TrackingExperiment {
     this.ys = [];
     this.ms = [];
     this.history = [];
+    // onTrialTick raises this and only the next onScrollTick lowers it, so a
+    // run stopped inside that 50 ms window leaves it set -- and the next run's
+    // first column would be drawn as a trial divider for a step that never
+    // happened.
+    this.steppedThisColumn = false;
     this.currentTargetY = this.centerY;
     this.currentModelY = this.centerY;
-    if (this.config.simulationMode !== 'none') this.currentTrackerY = this.currentTargetY;
+    // Seed the trace where the pointer IS, not where the last run left it.
+    // Without this a second recording opens with the red line at the height
+    // the previous run ended on, and it stays there until you happen to move.
+    // Clicking Record puts the pointer on the plot's centre, which is where
+    // the target starts; starting with the space bar from off the plot has no
+    // pointer height to use, so the centre is the honest default there too.
+    this.currentTrackerY =
+      this.config.simulationMode !== 'none' ? this.currentTargetY : this.pointerY ?? this.centerY;
 
     this.discretizeModel();
 
@@ -422,6 +473,7 @@ export class TrackingExperiment {
   end() {
     if (!this.active || this.phase !== 'recording') return;
     this.active = false;
+    this.touchPointerId = null;
     for (const h of [this.sampleTimerHandle, this.scrollTimerHandle, this.trialTimerHandle]) {
       if (h) clearInterval(h);
     }
@@ -461,6 +513,11 @@ export class TrackingExperiment {
     // you actually did. Driving it from this.ys would just replay you.
     this.currentModelY = this.simulate('second', this.ms);
     this.ms.push(this.currentModelY);
+
+    // The status carries a running clock, and this is the only timer that
+    // fires often enough to move it -- the trial timer ticks once every few
+    // seconds, which left the reading frozen between steps.
+    this.emitState('recording');
   }
 
   /**
@@ -613,5 +670,38 @@ export class TrackingExperiment {
     series((f) => f.model, this.palette.model, 2, [5, 4]);
     series((f) => f.target, this.palette.target, 2, []);
     series((f) => f.tracker, this.palette.you, 2, []);
+
+    // A mark at the pen for each series: it says where each one is RIGHT NOW,
+    // which a bare line end does not, and the shapes give the three series a
+    // second channel besides hue. Drawn in the same order as the lines, so
+    // your own trace sits on top where they coincide.
+    const last = this.history[n - 1];
+    const mark = (shape: 'square' | 'circle' | 'diamond', v: number | null, color: string) => {
+      if (v === null) return;
+      const x = anchorX;
+      const y = yAt(v);
+      const r = 4 * dpr;
+      ctx.beginPath();
+      if (shape === 'circle') ctx.arc(x, y, r, 0, 2 * Math.PI);
+      else if (shape === 'square') ctx.rect(x - r, y - r, r * 2, r * 2);
+      else {
+        ctx.moveTo(x, y - r * 1.25);
+        ctx.lineTo(x + r * 1.25, y);
+        ctx.lineTo(x, y + r * 1.25);
+        ctx.lineTo(x - r * 1.25, y);
+        ctx.closePath();
+      }
+      // A ring in the surface colour keeps two marks legible where they
+      // overlap, which they do every time the model agrees with you.
+      ctx.strokeStyle = this.palette.surface;
+      ctx.lineWidth = 2 * dpr;
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
+
+    mark('diamond', last.model, this.palette.model);
+    mark('square', last.target, this.palette.target);
+    mark('circle', last.tracker, this.palette.you);
   }
 }
