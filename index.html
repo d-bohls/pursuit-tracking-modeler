@@ -174,18 +174,27 @@
             <button type="button" role="radio" data-theme="system" aria-checked="true">System</button>
           </div>
         </div>
-        <div class="field">
-          <span>Step interval pace</span>
-          <div class="segmented" id="paceGroup" role="radiogroup" aria-label="Step interval pace">
-            <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast (2&nbsp;s)</button>
-            <button type="button" role="radio" data-pace="4000" aria-checked="true">Normal (4&nbsp;s)</button>
-            <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow (8&nbsp;s)</button>
+        <!-- One slider, 1 to 10 s in half seconds, with a number under every
+             whole second; clicking one jumps to it. The unit is in the value box. -->
+        <div class="field pace-field">
+          <div class="pace-head">
+            <label for="stepPeriod">Average time between steps:</label>
+            <output id="stepPeriodOut" for="stepPeriod">4 s</output>
+          </div>
+          <input id="stepPeriod" type="range" value="4" min="1" max="10" step="0.5" />
+          <div class="pace-marks" id="paceGroup">
+            <button type="button" data-pace="1000" style="--at: 0.0" tabindex="-1" aria-label="1 second">1</button>
+            <button type="button" data-pace="2000" style="--at: 0.1111" tabindex="-1" aria-label="2 seconds">2</button>
+            <button type="button" data-pace="3000" style="--at: 0.2222" tabindex="-1" aria-label="3 seconds">3</button>
+            <button type="button" data-pace="4000" style="--at: 0.3333" tabindex="-1" aria-label="4 seconds">4</button>
+            <button type="button" data-pace="5000" style="--at: 0.4444" tabindex="-1" aria-label="5 seconds">5</button>
+            <button type="button" data-pace="6000" style="--at: 0.5556" tabindex="-1" aria-label="6 seconds">6</button>
+            <button type="button" data-pace="7000" style="--at: 0.6667" tabindex="-1" aria-label="7 seconds">7</button>
+            <button type="button" data-pace="8000" style="--at: 0.7778" tabindex="-1" aria-label="8 seconds">8</button>
+            <button type="button" data-pace="9000" style="--at: 0.8889" tabindex="-1" aria-label="9 seconds">9</button>
+            <button type="button" data-pace="10000" style="--at: 1.0" tabindex="-1" aria-label="10 seconds">10</button>
           </div>
         </div>
-        <label class="field">
-          <span>Average time between steps (ms)</span>
-          <input id="stepPeriod" type="number" value="4000" min="1000" max="10000" step="100" />
-        </label>
         <label class="field">
           <span>Sample period (ms)</span>
           <input id="samplePeriod" type="number" value="100" min="50" max="500" step="10" />

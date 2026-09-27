@@ -742,6 +742,67 @@ button.primary[data-recording="true"] {
   padding: 0.35rem 0.5rem;
 }
 .field textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; resize: vertical; }
+/* The custom step interval, under its presets and tied to them by the label
+ * they share. */
+/* The step interval: one slider, its value beside the label, and a scale of
+ * seconds under it. */
+.pace-head { display: flex; align-items: center; gap: 8px; }
+.pace-head label { font-weight: 600; color: var(--ink-2); }
+/* The slider's live value, boxed so it reads as a reading, not as words. */
+#stepPeriodOut {
+  min-width: 3.2em;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--page);
+  font-weight: 600;
+  text-align: center;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.field input[type="range"] {
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--ink);
+}
+.pace-marks { position: relative; height: calc(1.25em + 8px); }
+/* A tick at every whole second, under where the thumb's centre lands: the
+ * thumb travels the track less one thumb width (about 16px), so the ticks,
+ * like the labels, are inset by half of one at each end. */
+.pace-marks::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 6px;
+  /* Muted ink, not a line colour: the line colours vanish on the dark
+   * surface. Whole seconds full height, half seconds half height and fainter. */
+  border-right: 1px solid var(--ink-muted);
+  background:
+    repeating-linear-gradient(to right, var(--ink-muted) 0 1px, transparent 1px calc(100% / 9)) top / 100% 6px no-repeat,
+    repeating-linear-gradient(to right, transparent 0 calc(100% / 18), color-mix(in srgb, var(--ink-muted) 60%, transparent) calc(100% / 18) calc(100% / 18 + 1px), transparent calc(100% / 18 + 1px) calc(100% / 9)) top / 100% 3px no-repeat;
+}
+.pace-marks button {
+  position: absolute;
+  top: 6px;
+  left: calc(8px + (100% - 16px) * var(--at));
+  transform: translateX(-50%);
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--ink-muted);
+}
+.pace-marks button:hover { color: var(--ink-2); }
+.pace-marks [data-active="true"] { color: var(--ink); font-weight: 600; }
 /* Five digits at most: sized to them, not stretched across the dialog. */
 .field input[type="number"] { align-self: flex-start; width: 7rem; font-variant-numeric: tabular-nums; }
 

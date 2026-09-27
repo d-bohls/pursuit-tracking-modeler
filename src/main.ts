@@ -92,6 +92,7 @@ const sessionsUnavailable = $<HTMLParagraphElement>('sessionsUnavailable');
 const simModelInfo = $<HTMLParagraphElement>('simModelInfo');
 
 const stepPeriodInput = $<HTMLInputElement>('stepPeriod');
+const stepPeriodOut = $<HTMLOutputElement>('stepPeriodOut');
 const samplePeriodInput = $<HTMLInputElement>('samplePeriod');
 const simulationModeSelect = $<HTMLSelectElement>('simulationMode');
 const discretePointsCheckbox = $<HTMLInputElement>('discretePoints');
@@ -324,7 +325,7 @@ $<HTMLDetailsElement>('advancedSettings').hidden = !new URLSearchParams(location
 /** Applies stored settings to the controls, before anything reads them. */
 function applyStoredSettings() {
   const s = readSettings();
-  if (typeof s.stepPeriodMs === 'number') stepPeriodInput.value = String(clamp(s.stepPeriodMs, 1000, 10000));
+  if (typeof s.stepPeriodMs === 'number') stepPeriodInput.value = String(clamp(s.stepPeriodMs, 1000, 10000) / 1000);
   if (typeof s.samplePeriodMs === 'number') samplePeriodInput.value = String(clamp(s.samplePeriodMs, 50, 500));
   // The self-test mode is deliberately NOT restored. Left on a model, it
   // would make the next visit's Record a model run -- every session starts
@@ -354,7 +355,8 @@ applyStoredSettings();
 
 function currentConfig(): ExperimentConfig {
   return {
-    stepPeriodMs: clamp(Number(stepPeriodInput.value) || 4000, 1000, 10000),
+    // The slider is in seconds, like the scale marked under it.
+    stepPeriodMs: clamp(Math.round((Number(stepPeriodInput.value) || 4) * 1000), 1000, 10000),
     samplePeriodMs: clamp(Number(samplePeriodInput.value) || 100, 50, 500),
     scrollPeriodMs: 50,
     simulationMode: simulationModeSelect.value as SimulationMode,
@@ -1337,14 +1339,20 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// The scale's labels under the slider are shortcuts to their positions. They
+// are skipped by Tab: the slider itself is the control, and its arrow keys
+// reach every value.
 paceGroup.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button[data-pace]') as HTMLButtonElement | null;
   if (!btn) return;
-  for (const b of paceGroup.querySelectorAll('button')) b.setAttribute('aria-checked', String(b === btn));
-  stepPeriodInput.value = btn.dataset.pace!;
+  stepPeriodInput.value = String(Number(btn.dataset.pace) / 1000);
   experiment.updateConfig(currentConfig());
+  syncPaceButtons();
   saveSettings();
 });
+// The readout follows the thumb while it is dragged; the setting is applied on
+// release, by the change listener below.
+stepPeriodInput.addEventListener('input', syncPaceButtons);
 
 [stepPeriodInput, samplePeriodInput, simulationModeSelect, discretePointsCheckbox].forEach((el) =>
   el.addEventListener('change', () => {
@@ -1355,10 +1363,12 @@ paceGroup.addEventListener('click', (e) => {
   }),
 );
 
+/** The slider's readout, and the label it sits on, if any. */
 function syncPaceButtons() {
-  const ms = String(currentConfig().stepPeriodMs);
-  for (const b of paceGroup.querySelectorAll('button')) {
-    b.setAttribute('aria-checked', String(b.getAttribute('data-pace') === ms));
+  const ms = currentConfig().stepPeriodMs;
+  stepPeriodOut.textContent = `${ms / 1000} s`;
+  for (const mark of paceGroup.querySelectorAll<HTMLElement>('[data-pace]')) {
+    mark.dataset.active = String(mark.dataset.pace === String(ms));
   }
 }
 
@@ -1371,7 +1381,7 @@ function repaintForTheme() {
 }
 
 resetSettingsBtn.addEventListener('click', () => {
-  stepPeriodInput.value = String(DEFAULT_SETTINGS.stepPeriodMs);
+  stepPeriodInput.value = String(DEFAULT_SETTINGS.stepPeriodMs / 1000);
   samplePeriodInput.value = String(DEFAULT_SETTINGS.samplePeriodMs);
   simulationModeSelect.value = DEFAULT_SETTINGS.simulationMode;
   discretePointsCheckbox.checked = DEFAULT_SETTINGS.discretePoints;
