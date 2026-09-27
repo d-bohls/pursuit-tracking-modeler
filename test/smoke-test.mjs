@@ -246,6 +246,21 @@ const darkSurface = await surfaceOf('#freqGraph');
 await page.locator('#settingsDialog button[value="close"]').click();
 if (lightSurface === darkSurface) fail(`plot surface did not follow the theme (both ${lightSurface})`);
 
+// The appearance can change with no event reaching the page -- iOS turning
+// dark while Safari sleeps in the background. Coming back must repaint the
+// live plot in the page's colours, not the ones it last read.
+const liveDark = await surfaceOf('#graph');
+await page.evaluate(() => {
+  document.documentElement.setAttribute('data-theme', 'light');
+  document.dispatchEvent(new Event('visibilitychange'));
+});
+const liveLight = await surfaceOf('#graph');
+if (liveLight === liveDark || liveLight !== lightSurface) fail(`the live plot did not follow a theme change on return (${liveDark} -> ${liveLight})`);
+await page.evaluate(() => {
+  document.documentElement.setAttribute('data-theme', 'dark');
+  document.dispatchEvent(new Event('visibilitychange'));
+});
+
 // The step interval slider: a number under it jumps there, the arrow keys
 // step by half seconds, and the value survives a reload.
 await page.locator('#settingsBtn').click();

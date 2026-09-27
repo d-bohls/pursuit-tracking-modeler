@@ -283,8 +283,18 @@ export class TrackingExperiment {
     new ResizeObserver(() => this.resize()).observe(canvas);
   }
 
-  /** Re-reads the plot colours from CSS. Call after a theme change. */
+  /** Redraws in the current theme. */
   refreshTheme() {
+    this.draw();
+  }
+
+  /**
+   * Reads the plot colours from CSS. Done on every draw rather than cached:
+   * the page's appearance can change without a change event reaching it --
+   * iOS turning dark at night while Safari is in the background -- and a
+   * cached palette then painted the plot in the other theme's colours.
+   */
+  private readPalette() {
     const s = getComputedStyle(this.canvas);
     const read = (name: string, fallback: string) => s.getPropertyValue(name).trim() || fallback;
     this.palette = {
@@ -296,7 +306,6 @@ export class TrackingExperiment {
       you: read('--series-you', '#eb6834'),
       model: read('--series-model', '#15946a'),
     };
-    this.draw();
   }
 
   /** Sizes the backing store to the element's real device pixels. */
@@ -668,6 +677,7 @@ export class TrackingExperiment {
 
   /** Redraws the whole visible window from the history buffer. */
   private draw() {
+    this.readPalette();
     const { ctx, canvas } = this;
     const { width, height } = canvas;
     const dpr = window.devicePixelRatio || 1;
@@ -768,8 +778,9 @@ export class TrackingExperiment {
 
     // Solid like the other two: the dashed lines on this plot mark steps and
     // the start of the run. Its green is dark enough to carry it on colour.
-    series((f) => f.model, this.palette.model, 2, []);
+    // Target at the bottom, then the model, then your trace on top.
     series((f) => f.target, this.palette.target, 2, []);
+    series((f) => f.model, this.palette.model, 2, []);
     series((f) => f.tracker, this.palette.you, 2, []);
 
     // A mark at the pen for each series: it says where each one is RIGHT NOW,
@@ -801,8 +812,8 @@ export class TrackingExperiment {
       ctx.fill();
     };
 
-    mark('diamond', last.model, this.palette.model);
     mark('square', last.target, this.palette.target);
+    mark('diamond', last.model, this.palette.model);
     mark('circle', last.tracker, this.palette.you);
   }
 }

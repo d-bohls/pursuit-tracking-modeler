@@ -205,6 +205,12 @@ button.primary[data-recording="true"] {
   background: var(--plot-surface);
   box-shadow: var(--shadow);
   overflow: hidden;
+  /* A finger held on the plot is a recording, not a tap or a long press, so
+   * iOS must not grey the plot over, select its text or offer a callout. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #graph {
@@ -352,7 +358,7 @@ button.primary[data-recording="true"] {
 /* A touch on Record holds a recording, so the finger will slide from it onto
  * the plot: no scrolling (which would cancel the touch and end the run), and
  * no long-press selection or callout. */
-#recordBtn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#recordBtn { touch-action: none; }
 
 
 /* The plot's one line of help, at the foot of the plot. */

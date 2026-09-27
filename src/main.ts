@@ -714,6 +714,15 @@ function repaintForTheme() {
   renderPlots(true);
 }
 
+// Back from the background, the appearance may have changed with nothing
+// said about it (iOS turns dark at night while Safari is asleep), so repaint.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') repaintForTheme();
+});
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) repaintForTheme();
+});
+
 connectSettings(() => {
   experiment.updateConfig(currentConfig());
   syncLegend();

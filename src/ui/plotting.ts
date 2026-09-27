@@ -157,10 +157,8 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
     ctx.globalAlpha = 1;
   };
 
-  for (const other of series.others ?? []) drawSeries(other, c.measured, 1.25, [], 0.45);
-
-  // Grey, not the target's blue: the two share the key above the plots, and
-  // one colour meaning two things there would be a lie in one of them.
+  // Stacked target, then models, then what was measured, as on every plot:
+  // your own data is never hidden under a model.
   // The target: |H| = 1 at every frequency, which is what perfect tracking
   // would give. In the target's blue, so the shared key holds on this plot too.
   ctx.strokeStyle = c.target;
@@ -172,6 +170,7 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
 
   drawSeries(series.firstOrder, c.muted, 2, [5, 4]);
   drawSeries(series.secondOrder, c.second, 2, []);
+  for (const other of series.others ?? []) drawSeries(other, c.measured, 1.25, [], 0.45);
   if (series.sampled) drawSeries(series.sampled, c.measured, 2, []);
 }
 
@@ -378,11 +377,12 @@ export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeri
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   };
-  for (const other of series.others ?? []) line(other, c.measured, 1.25, [], 0.45);
+  // Target at the bottom, then the model, then what you did on top.
   line(series.target, c.target, 2, []);
   if (series.fit) line(series.fit, c.second, 1.5, [4, 3], 0.6);
-  if (series.measured) line(series.measured, c.measured, 2, []);
   line(series.model, c.second, 2, []);
+  for (const other of series.others ?? []) line(other, c.measured, 1.25, [], 0.45);
+  if (series.measured) line(series.measured, c.measured, 2, []);
 }
 
 /**
