@@ -4,6 +4,8 @@ Record yourself pursuit tracking a stepping target with your pointer, and get a
 model of how you respond: your reaction delay, damping and natural
 frequency, as continuous- and discrete-time transfer functions.
 
+**Try it: [d-bohls.github.io/pursuit-tracking-modeler](https://d-bohls.github.io/pursuit-tracking-modeler/)**
+
 ## What it does
 
 1. **Live experiment.** A target line jumps to a random height every few
@@ -100,6 +102,7 @@ src/
 test/                  the checks and tests above, and serve.mjs, which
                        builds and serves the app for them
   data/                a real recording, used by the tests
+.github/workflows/     CI: npm test on every push, and the Pages deploy
 ```
 
 ## License
