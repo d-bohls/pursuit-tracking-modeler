@@ -1,16 +1,16 @@
 // The full pipeline: raw samples -> step responses -> curve fit -> discrete
 // model -> continuous (Laplace) model.
 
-import { parseTrials, padTrials } from './trials';
+import { splitStepResponses, padResponses } from './stepResponses';
 import { deconvolve, dft } from './dsp';
 import { fit1PoleOutputError, fit2PoleOutputError } from './curveFit';
 import { discretePairToContinuous, discretePoleToContinuous, pairNaturalFrequency, pairProduct } from './poleConversion';
-import type { ContinuousModelParams, DiscreteModelParams, Trial } from './types';
+import type { ContinuousModelParams, DiscreteModelParams, StepResponse } from './types';
 
-export interface TrialAnalysis {
-  /** The raw (unpadded) trial the model was identified against. */
-  trial: Trial;
-  /** Deconvolved impulse response of the padded trial -- used for the frequency plot. */
+export interface StepResponseAnalysis {
+  /** The raw (unpadded) step response the model was identified against. */
+  response: StepResponse;
+  /** Deconvolved impulse response of the padded step response -- used for the frequency plot. */
   hn: Float64Array;
   discrete: DiscreteModelParams;
   continuous: ContinuousModelParams;
@@ -18,30 +18,30 @@ export interface TrialAnalysis {
   fit1Rms: number;
   /** RMS error of the second-order model against the recorded response, in pixels. */
   fit2Rms: number;
-  /** Size of this trial's step, in pixels -- the scale the RMS should be read against. */
+  /** Size of this step response's step, in pixels -- the scale the RMS should be read against. */
   stepSize: number;
 }
 
 /**
- * The summary models a set of trials agrees on. Split out from AnalysisResult
- * so the UI can re-derive it from a SUBSET of trials -- excluding a trial that
+ * The summary models a set of step responses agrees on. Split out from AnalysisResult
+ * so the UI can re-derive it from a SUBSET of step responses -- excluding a step response that
  * fit badly is a judgement the operator should be able to make and see the
  * consequences of, which means this has to be computable without re-running
- * the (far more expensive) per-trial identification.
+ * the (far more expensive) per-response identification.
  */
-export interface TrialAggregate {
+export interface ResponseAggregate {
   averageDiscrete: DiscreteModelParams;
   averageContinuous: ContinuousModelParams;
   /**
-   * Median of the per-trial parameters. The median is reported alongside so the
+   * Median of the per-response parameters. The median is reported alongside so the
    * pull is visible rather than silently baked into one number.
    */
   medianDiscrete: DiscreteModelParams;
   medianContinuous: ContinuousModelParams;
 }
 
-export interface AnalysisResult extends TrialAggregate {
-  trials: TrialAnalysis[];
+export interface AnalysisResult extends ResponseAggregate {
+  responses: StepResponseAnalysis[];
 }
 
 function median(values: number[]): number {
@@ -56,26 +56,26 @@ function average(values: number[]): number {
 }
 
 /**
- * Identify ONE trial: deconvolution for the frequency plot, then an
+ * Identify ONE step response: deconvolution for the frequency plot, then an
  * output-error fit of a first- and second-order model, reported in both the
  * discrete and continuous domains.
  *
- * `trial` is the raw (unpadded) trial the models are fitted against; `padded`
- * is the same trial run through padTrials, used only for the deconvolution.
+ * `response` is the raw (unpadded) step response the models are fitted against; `padded`
+ * is the same step response run through padResponses, used only for the deconvolution.
  *
  * Exposed separately from analyzeExperiment so a live recording can identify
- * each trial as it completes (~13 ms) instead of re-identifying every trial
+ * each step response as it completes (~13 ms) instead of re-identifying every step response
  * from scratch each time a new one lands.
  */
-export function analyzeTrial(trial: Trial, padded: Trial, samplePeriodMs: number): TrialAnalysis {
+export function analyzeStepResponse(response: StepResponse, padded: StepResponse, samplePeriodMs: number): StepResponseAnalysis {
   // Identify against the recorded response, driving the model with the real
   // input (output-error). Deconvolution and the DFT are still computed, but
   // only to draw the frequency-response plot -- see the note in curveFit.ts
   // for why fitting h[n] biases the damping.
   const hn = deconvolve(padded.xn, padded.yn);
 
-  const fit1 = fit1PoleOutputError(trial.xn, trial.yn);
-  const fit2 = fit2PoleOutputError(trial.xn, trial.yn);
+  const fit1 = fit1PoleOutputError(response.xn, response.yn);
+  const fit2 = fit2PoleOutputError(response.xn, response.yn);
 
   // seconds, so the continuous poles come out in rad/s and match the
   // delays below (see the units note in poleConversion.ts)
@@ -99,27 +99,27 @@ export function analyzeTrial(trial: Trial, padded: Trial, samplePeriodMs: number
   };
 
   return {
-    trial,
+    response,
     hn,
     discrete,
     continuous,
     fit1Rms: fit1.rms,
     fit2Rms: fit2.rms,
-    stepSize: Math.abs(trial.xn[trial.xn.length - 1]),
+    stepSize: Math.abs(response.xn[response.xn.length - 1]),
   };
 }
 
 /**
- * Mean and median of a set of identified trials. Takes the trials rather than
- * the raw samples so the caller can leave trials out -- see TrialAggregate.
+ * Mean and median of a set of identified step responses. Takes the step responses rather than
+ * the raw samples so the caller can leave step responses out -- see ResponseAggregate.
  */
-export function aggregateTrials(trials: TrialAnalysis[], samplePeriodMs: number): TrialAggregate {
+export function aggregateResponses(responses: StepResponseAnalysis[], samplePeriodMs: number): ResponseAggregate {
   const averageDiscrete: DiscreteModelParams = {
-    P11: average(trials.map((t) => t.discrete.P11)),
-    D1: average(trials.map((t) => t.discrete.D1)),
-    P21: average(trials.map((t) => t.discrete.P21)),
-    P22: average(trials.map((t) => t.discrete.P22)),
-    D2: average(trials.map((t) => t.discrete.D2)),
+    P11: average(responses.map((t) => t.discrete.P11)),
+    D1: average(responses.map((t) => t.discrete.D1)),
+    P21: average(responses.map((t) => t.discrete.P21)),
+    P22: average(responses.map((t) => t.discrete.P22)),
+    D2: average(responses.map((t) => t.discrete.D2)),
   };
 
   const c1avg = discretePoleToContinuous(averageDiscrete.P11, 0, samplePeriodMs / 1000);
@@ -133,11 +133,11 @@ export function aggregateTrials(trials: TrialAnalysis[], samplePeriodMs: number)
   };
 
   const medianDiscrete: DiscreteModelParams = {
-    P11: median(trials.map((t) => t.discrete.P11)),
-    D1: median(trials.map((t) => t.discrete.D1)),
-    P21: median(trials.map((t) => t.discrete.P21)),
-    P22: median(trials.map((t) => t.discrete.P22)),
-    D2: median(trials.map((t) => t.discrete.D2)),
+    P11: median(responses.map((t) => t.discrete.P11)),
+    D1: median(responses.map((t) => t.discrete.D1)),
+    P21: median(responses.map((t) => t.discrete.P21)),
+    P22: median(responses.map((t) => t.discrete.P22)),
+    D2: median(responses.map((t) => t.discrete.D2)),
   };
   const m1 = discretePoleToContinuous(medianDiscrete.P11, 0, samplePeriodMs / 1000);
   const m2 = discretePairToContinuous(medianDiscrete.P21, medianDiscrete.P22, samplePeriodMs / 1000);
@@ -153,10 +153,10 @@ export function aggregateTrials(trials: TrialAnalysis[], samplePeriodMs: number)
 }
 
 export function analyzeExperiment(rawXs: Float64Array, rawYs: Float64Array, samplePeriodMs: number): AnalysisResult {
-  const rawTrials = parseTrials(rawXs, rawYs);
-  const padded = padTrials(rawTrials, 10);
-  const trials = rawTrials.map((trial, i) => analyzeTrial(trial, padded[i], samplePeriodMs));
-  return { trials, ...aggregateTrials(trials, samplePeriodMs) };
+  const rawResponses = splitStepResponses(rawXs, rawYs);
+  const padded = padResponses(rawResponses, 10);
+  const responses = rawResponses.map((response, i) => analyzeStepResponse(response, padded[i], samplePeriodMs));
+  return { responses, ...aggregateResponses(responses, samplePeriodMs) };
 }
 
 /** e.g. */

@@ -36,7 +36,9 @@
 
   --series-target: #2a78d6;
   --series-you: #eb6834;
-  --series-model: #1baf7a;
+  /* Dark enough to carry a line on colour alone: the old #1baf7a sat at 2.7:1
+   * on the plot, and had to be dashed to be told apart. This is 3.7:1. */
+  --series-model: #15946a;
 
   --critical: #d03b3b;
   --warning: #fab219;
@@ -229,7 +231,7 @@ button.primary[data-recording="true"] {
 .legend[hidden] { display: none; }
 /* The detail plots' key: plain line samples, solid or dashed like the plots. */
 .detail-legend { font-size: 0.75rem; justify-content: center; }
-/* Centred on the card like the Trials header's note, not pushed to the end
+/* Centred on the card like the Session header's note, not pushed to the end
  * like a header's action button. */
 .split-head > .detail-legend { justify-self: center; }
 .key { width: 18px; height: 0; border-top: 2px solid var(--key); display: inline-block; }
@@ -259,10 +261,7 @@ button.primary[data-recording="true"] {
 .swatch-target::after { border-radius: 1px; }
 .swatch-you { --mark: var(--series-you); }
 .swatch-you::after { border-radius: 50%; }
-.swatch-model {
-  --mark: var(--series-model);
-  background: repeating-linear-gradient(90deg, var(--series-model) 0 5px, transparent 5px 9px);
-}
+.swatch-model { --mark: var(--series-model); }
 .swatch-model::after { transform: translate(50%, -50%) rotate(45deg); }
 
 /* One line, always. The status can carry a loaded file's name, which is
@@ -302,7 +301,8 @@ button.primary[data-recording="true"] {
  * axis a run records. The column stays horizontally centred at every width;
  * sliding it left to buy the labels room was tried and looked worse. */
 .stage {
-  --actions-width: 7.5rem;
+  /* Wide enough for "Record session" and its dot on one line. */
+  --actions-width: 10rem;
 }
 
 /* A veil over the plot while the buttons are up: the buttons read as the
@@ -333,7 +333,7 @@ button.primary[data-recording="true"] {
   gap: 8px;
 }
 .stage-actions[hidden] { display: none; }
-.action-row > button { min-width: 0; width: 100%; pointer-events: auto; }
+.action-row > button { min-width: 0; width: 100%; pointer-events: auto; white-space: nowrap; }
 /* A touch on Record holds a recording, so the finger will slide from it onto
  * the plot: no scrolling (which would cancel the touch and end the run), and
  * no long-press selection or callout. */
@@ -350,7 +350,7 @@ button.primary[data-recording="true"] {
   width: max-content;
   /* Centred on the plot but never reaching the pen at 80%: a centred block
    * stays clear of it while its half-width is under 30% of the plot. */
-  max-width: min(420px, calc(60% - 24px));
+  max-width: min(600px, calc(60% - 24px));
   padding: 4px 10px 4px 26px;
   list-style: disc;
   text-align: left;
@@ -368,6 +368,15 @@ button.primary[data-recording="true"] {
 .stage-guide:empty { display: none; }
 /* At rest nothing is drawn at the pen, so the help may use the width. */
 .stage[data-resting="true"] .stage-guide { max-width: min(520px, calc(100% - 32px)); }
+/* A phone's plot is too narrow to centre the running help clear of the pen:
+ * 60% of it wrapped every line. From the left edge it can run up to the pen. */
+@media (max-width: 639px) {
+  .stage:not([data-resting="true"]) .stage-guide {
+    left: 12px;
+    transform: none;
+    max-width: calc(80% - 36px);
+  }
+}
 
 /* The end-of-run result: what the run produced, until something moves on
  * from it. Nothing to dismiss -- any button, or the next run, does that. */
@@ -406,7 +415,7 @@ button.primary[data-recording="true"] {
 
 /* Desktop: the plot is a full-width row across the top -- a scrolling trace
  * wants width more than anything else on the page -- with the readout and
- * the trials sharing the space beneath it. */
+ * the step responses sharing the space beneath it. */
 @media (min-width: 1040px) {
   .deck { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
@@ -414,7 +423,7 @@ button.primary[data-recording="true"] {
 /* On a screen with room for it, the app is a fixed shell rather than a
  * document: header, plot, then the two cards, all inside one viewport with
  * no page scrollbar. Anything that overflows scrolls INSIDE its own card, so
- * the plot never slides off the top while you read a trial.
+ * the plot never slides off the top while you read a step response.
  *
  * Gated on height as well as width -- a short, wide window (a laptop with
  * devtools open) has no business being squeezed into 100vh. */
@@ -441,7 +450,7 @@ button.primary[data-recording="true"] {
   .deck { min-height: 0; }
   .deck > .card { min-height: 0; overflow-y: auto; }
 
-  /* The detail plots are the only thing tall enough to push the trials card
+  /* The detail plots are the only thing tall enough to push the session card
    * past its share of the shell, and they read fine shorter. Scoped under
    * .deck to outrank the base `.plots canvas` rule, which is the same
    * specificity but declared later in the sheet. */
@@ -476,18 +485,18 @@ button.primary[data-recording="true"] {
  * them. Equal outer tracks keep it on the true centre whatever the ends measure. */
 .split-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
 .split-head .card-note { text-align: center; }
-.trial-notes p { margin: 0; }
-.trial-notes p + p { margin-top: 2px; }
+.response-notes p { margin: 0; }
+.response-notes p + p { margin-top: 2px; }
 /* A long note must not push the centred instruction off its centre: the name
  * is cut to fit its column, and the full text is in the tooltip. */
-.trials-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#recordingSep,
-#recordingName { font-weight: 500; color: var(--ink-muted); }
+.session-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#sessionSep,
+#sessionName { font-weight: 500; color: var(--ink-muted); }
 /* The name is its own rename control: a quiet underline on hover says so. */
-#recordingName { cursor: pointer; border-radius: 4px; }
-#recordingName:hover { color: var(--ink-2); text-decoration: underline dotted; text-underline-offset: 3px; }
-#recordingName:focus-visible { outline: 2px solid var(--series-target); outline-offset: 1px; }
-#recordingNameInput {
+#sessionName { cursor: pointer; border-radius: 4px; }
+#sessionName:hover { color: var(--ink-2); text-decoration: underline dotted; text-underline-offset: 3px; }
+#sessionName:focus-visible { outline: 2px solid var(--series-target); outline-offset: 1px; }
+#sessionNameInput {
   font: inherit;
   font-weight: 500;
   width: calc(100% - 7.5em);
@@ -519,9 +528,9 @@ button.primary[data-recording="true"] {
   .split-head .card-note, .split-head .detail-legend { grid-row: 2; grid-column: 1 / -1; }
 }
 
-/* The detail plots belong to the trial you picked above them, so they share
- * the trials container rather than sitting in a card of their own. */
-.trial-detail { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+/* The detail plots belong to the step response you picked above them, so they share
+ * the session card rather than sitting in a card of their own. */
+.response-detail { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 
 .empty { margin: 0; font-size: 0.85rem; color: var(--ink-muted); }
 
@@ -612,25 +621,25 @@ button.primary[data-recording="true"] {
   background: color-mix(in srgb, var(--warning) 7%, transparent);
 }
 
-/* -------------------------------------------------------------- trials */
+/* -------------------------------------------------------------- step responses */
 
 .filmstrip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
 
 /* Two sibling controls, not one nested inside the other: the checkbox sits
  * over the card's corner, the inspect button fills the rest. Both are
  * separately focusable and neither swallows the other's clicks. */
-.trial-card {
+.response-card {
   position: relative;
   flex: 0 0 132px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--card);
 }
-.trial-card[data-excluded="true"] { opacity: 0.5; }
-.trial-card[data-outlier="poor"] { border-left: 3px solid var(--warning); }
-.trial-card[data-outlier="degenerate"] { border-left: 3px dashed var(--warning); }
+.response-card[data-excluded="true"] { opacity: 0.5; }
+.response-card[data-outlier="poor"] { border-left: 3px solid var(--warning); }
+.response-card[data-outlier="degenerate"] { border-left: 3px dashed var(--warning); }
 
-.trial-inspect {
+.response-inspect {
   display: block;
   width: 100%;
   padding: 8px;
@@ -642,12 +651,12 @@ button.primary[data-recording="true"] {
   text-align: left;
   cursor: pointer;
 }
-.trial-inspect:hover { border: none; }
-.trial-inspect[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
-.trial-inspect .name { display: block; font-size: 0.75rem; font-weight: 600; padding-right: 20px; }
-.trial-inspect canvas { display: block; width: 100%; height: 42px; margin: 6px 0 4px; }
+.response-inspect:hover { border: none; }
+.response-inspect[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--ink); }
+.response-inspect .name { display: block; font-size: 0.75rem; font-weight: 600; padding-right: 20px; }
+.response-inspect canvas { display: block; width: 100%; height: 42px; margin: 6px 0 4px; }
 
-.trial-include {
+.response-include {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -656,7 +665,7 @@ button.primary[data-recording="true"] {
   cursor: pointer;
 }
 
-.trial-stats { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.response-stats { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
 /* --------------------------------------------------------------- plots */
 
@@ -744,7 +753,7 @@ dialog.settings {
   color: var(--ink);
 }
 /* One column of controls since the two period fields stacked: sized to the
- * widest of them, the trial-pace buttons. */
+ * widest of them, the step-pace buttons. */
 #settingsDialog { width: min(360px, calc(100vw - 32px)); }
 dialog.settings::backdrop { background: rgba(0, 0, 0, 0.45); }
 /* Header and footer stay put and the body scrolls, so Done is always in reach
@@ -787,11 +796,11 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
 }
 .footer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* ------------------------------------------------------------ library */
+/* ----------------------------------------------------------- sessions */
 
-.library { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.library:empty { display: none; }
-.rec {
+.session-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.session-list:empty { display: none; }
+.session-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas: "open data delete" "note note note";
@@ -800,10 +809,10 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
   border: 1px solid var(--line);
   border-radius: 8px;
 }
-/* The open recording: the one on screen, and the one a note or a ticked
- * trial is saved to. */
-.rec[aria-current="true"] { border-color: var(--ink-muted); box-shadow: inset 3px 0 0 var(--ink); }
-.rec-open {
+/* The open session: the one on screen, and the one a note or a ticked
+ * step response is saved to. */
+.session-row[aria-current="true"] { border-color: var(--ink-muted); box-shadow: inset 3px 0 0 var(--ink); }
+.session-open {
   grid-area: open;
   display: flex;
   flex-wrap: wrap;
@@ -816,16 +825,16 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
   text-align: left;
   font-size: 0.8rem;
 }
-.rec-open:hover .rec-when { text-decoration: underline; }
-.rec-when { font-weight: 600; color: var(--ink); }
-.rec-who, .rec-stats { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.rec-delete, .rec-data { align-self: start; padding: 3px 8px; font-size: 0.72rem; }
-.rec-delete { grid-area: delete; }
-.rec-data { grid-area: data; }
+.session-open:hover .session-when { text-decoration: underline; }
+.session-when { font-weight: 600; color: var(--ink); }
+.session-who, .session-stats { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.session-delete, .session-data { align-self: start; padding: 3px 8px; font-size: 0.72rem; }
+.session-delete { grid-area: delete; }
+.session-data { grid-area: data; }
 /* The run on screen when it is not kept: no note to save, nothing to delete. */
-.rec[data-unsaved="true"] { border-style: dashed; grid-template-areas: "open data ."; }
-.rec-delete[data-confirm="true"] { border-color: var(--critical); color: var(--critical); }
-.rec-note {
+.session-row[data-unsaved="true"] { border-style: dashed; grid-template-areas: "open data ."; }
+.session-delete[data-confirm="true"] { border-color: var(--critical); color: var(--critical); }
+.session-note {
   grid-area: note;
   font: inherit;
   font-size: 0.78rem;
@@ -836,7 +845,7 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
   padding: 4px 8px;
   min-width: 0;
 }
-.library-warning { margin: 0; font-size: 0.8rem; color: var(--critical); }
+.sessions-warning { margin: 0; font-size: 0.8rem; color: var(--critical); }
 .samples-meta { margin: 0; font-size: 0.8rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 #samplesOut {
   width: 100%;

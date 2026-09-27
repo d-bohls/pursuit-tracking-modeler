@@ -40,22 +40,22 @@ const fail = (msg) => {
 // 1. page loaded without script errors
 if (consoleErrors.length) fail(`console errors on load: ${consoleErrors.join(' | ')}`);
 
-// The recordings list, and one recording's samples, each in a modal.
+// The Sessions list, and one session's samples, each in a modal.
 const openData = async () => {
-  await page.locator('#dataBtn').click();
+  await page.locator('#sessionsBtn').click();
   await page.waitForTimeout(200);
 };
 const closeData = async () => {
-  await page.locator('#dataDialog button[value="close"]').click();
+  await page.locator('#sessionsDialog button[value="close"]').click();
   await page.waitForTimeout(200);
 };
 
-// 2. the empty state is honest: nothing kept, no trials, no model
+// 2. the empty state is honest: nothing kept, no step responses, no model
 await openData();
-if ((await page.locator('#libraryList .rec').count()) !== 0) fail('recordings listed before any data');
+if ((await page.locator('#sessionList .session-row').count()) !== 0) fail('recordings listed before any data');
 await closeData();
-if ((await page.locator('.trial-card').count()) !== 0) fail('trial cards present before any data');
-if (!/Record a few steps/.test((await page.locator('#readout').textContent()) ?? '')) {
+if ((await page.locator('.response-card').count()) !== 0) fail('response cards present before any data');
+if (!/Record a few step responses/.test((await page.locator('#readout').textContent()) ?? '')) {
   fail('readout did not show its empty state');
 }
 
@@ -67,7 +67,7 @@ const status = await page.locator('#status').textContent();
 if (!/Loaded 437 samples/.test(status ?? '')) fail(`unexpected load status: ${status}`);
 
 await openData();
-await page.locator('#libraryList .rec-data').first().click();
+await page.locator('#sessionList .session-data').first().click();
 await page.waitForTimeout(200);
 const samplesText = await page.locator('#samplesOut').inputValue();
 if (!samplesText.startsWith('n\tx[n]\ty[n]')) fail('samples view did not populate');
@@ -77,12 +77,12 @@ if (!/437 samples · one every 100 ms/.test((await page.locator('#samplesMeta').
 if (await page.locator('#saveDataBtn').isDisabled()) fail('export should be available in the samples view');
 await page.locator('#samplesDialog button[value="close"]').click();
 await page.waitForTimeout(200);
-if (!(await page.locator('#dataDialog').isVisible())) fail('closing the samples view should return to the list');
+if (!(await page.locator('#sessionsDialog').isVisible())) fail('closing the samples view should return to the list');
 await closeData();
 
-// 4. one card per trial, and the summary model matches the engine
-const cards = await page.locator('.trial-card').count();
-if (cards !== 10) fail(`expected 10 trial cards, got ${cards}`);
+// 4. one card per step response, and the summary model matches the engine
+const cards = await page.locator('.response-card').count();
+if (cards !== 10) fail(`expected 10 response cards, got ${cards}`);
 
 // The display typesets the equation, so hold it to the engine string it carries.
 const modelOf = () => page.locator('.diffeq').getAttribute('data-equation');
@@ -103,24 +103,24 @@ const tau = Number(details.match(/τ = ([-\d.]+) s/)?.[1]);
 if (!(wn > 0.1 && wn < 100)) fail(`natural frequency ${wn} rad/s is not physically plausible (unit mismatch?)`);
 if (!(tau > 0.01 && tau < 10)) fail(`first-order time constant ${tau} s is not physically plausible (unit mismatch?)`);
 
-// 6. excluding a trial re-derives the summary from what is left, and putting
+// 6. excluding a step response re-derives the summary from what is left, and putting
 // it back restores the original model exactly
 const before = await modelOf();
-await page.locator('.trial-card input').first().uncheck();
+await page.locator('.response-card input').first().uncheck();
 await page.waitForTimeout(300);
 const excluded = await modelOf();
-if (excluded === before) fail('excluding a trial did not change the identified model');
+if (excluded === before) fail('excluding a response did not change the identified model');
 if (!/1 excluded/.test((await page.locator('#readoutSource').textContent()) ?? '')) {
-  fail('readout did not report the excluded trial');
+  fail('readout did not report the excluded response');
 }
-await page.locator('.trial-card input').first().check();
+await page.locator('.response-card input').first().check();
 await page.waitForTimeout(300);
 if ((await modelOf()) !== before) {
-  fail('re-including the trial did not restore the model');
+  fail('re-including the response did not restore the model');
 }
 
 // 7. the plots actually drew something (non-blank canvases)
-// .first(): the sparkline selector matches every trial card, and a bare
+// .first(): the sparkline selector matches every step response card, and a bare
 // locator with more than one match is a strict-mode error.
 const canvasHasInk = (selector) =>
   page
@@ -137,7 +137,7 @@ const canvasHasInk = (selector) =>
   });
 if (!(await canvasHasInk('#freqGraph'))) fail('frequency response canvas is blank');
 if (!(await canvasHasInk('#poleGraph'))) fail('pole plot canvas is blank');
-if (!(await canvasHasInk('.trial-card canvas'))) fail('trial sparkline is blank');
+if (!(await canvasHasInk('.response-card canvas'))) fail('response sparkline is blank');
 if (!(await canvasHasInk('#stepGraph'))) fail('step response canvas is blank');
 
 // 7b. dragging the pole is exploration: moving it off the fit makes the fit
@@ -204,9 +204,9 @@ if (process.exitCode) {
   console.log('  - page loads clean with no console errors');
   console.log('  - empty state renders before any data');
   console.log('  - 437 samples loaded through the file picker');
-  console.log('  - 10 trial cards rendered');
+  console.log('  - 10 response cards rendered');
   console.log(`  - median model matches engine output: ${EXPECTED_MEDIAN_2ND_ORDER}`);
-  console.log('  - excluding and restoring a trial re-derives the model');
+  console.log('  - excluding and restoring a response re-derives the model');
   console.log('  - step, frequency, pole and sparkline canvases drew, and follow the theme');
   console.log('  - moving the pole off the fit raises the error, and Escape restores it');
 }

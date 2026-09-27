@@ -1,13 +1,13 @@
 // Splitting a recording at each step, and padding the pieces to a common
 // length.
 
-import type { Trial } from './types';
+import type { StepResponse } from './types';
 
 /**
  * Where the recording splits: 0, then the index of every sample at which the
- * target has just stepped. Trial k runs from indices[k] to indices[k + 1]; the
- * stretch before the first step and the one after the last are not trials.
- * Shared by parseTrials and trialLeadIns so the two can never disagree.
+ * target has just stepped. Step response k runs from indices[k] to indices[k + 1]; the
+ * stretch before the first step and the one after the last are not step responses.
+ * Shared by splitStepResponses and responseLeadIns so the two can never disagree.
  */
 function stepIndices(xs: Float64Array, ys: Float64Array): number[] {
   const ns = Math.min(xs.length, ys.length) - 1;
@@ -19,11 +19,11 @@ function stepIndices(xs: Float64Array, ys: Float64Array): number[] {
   return indices;
 }
 
-export function parseTrials(xs: Float64Array, ys: Float64Array): Trial[] {
+export function splitStepResponses(xs: Float64Array, ys: Float64Array): StepResponse[] {
   const indices = stepIndices(xs, ys);
-  const trialCount = indices.length - 1;
-  const trials: Trial[] = [];
-  for (let i1 = 1; i1 < trialCount; i1++) {
+  const responseCount = indices.length - 1;
+  const responses: StepResponse[] = [];
+  for (let i1 = 1; i1 < responseCount; i1++) {
     const shift = xs[indices[i1] - 1];
     const start = indices[i1];
     const end = indices[i1 + 1];
@@ -33,18 +33,18 @@ export function parseTrials(xs: Float64Array, ys: Float64Array): Trial[] {
       xn[i - start] = xs[i] - shift;
       yn[i - start] = ys[i] - shift;
     }
-    trials.push({ xn, yn });
+    responses.push({ xn, yn });
   }
-  return trials;
+  return responses;
 }
 
 /**
- * Pad each trial to 10x its original length by repeating its final sample,
- * so every trial (and thus every deconvolved h[n]) has a common length for
+ * Pad each step response to 10x its original length by repeating its final sample,
+ * so every step response (and thus every deconvolved h[n]) has a common length for
  * curve fitting. Fixed to pad yn with yn's own tail (see file header).
  */
-export function padTrials(trials: Trial[], factor = 10): Trial[] {
-  return trials.map(({ xn, yn }) => {
+export function padResponses(responses: StepResponse[], factor = 10): StepResponse[] {
+  return responses.map(({ xn, yn }) => {
     const n = xn.length;
     const newLength = n * factor + 1;
     const xn2 = new Float64Array(newLength);
@@ -62,15 +62,15 @@ export function padTrials(trials: Trial[], factor = 10): Trial[] {
 }
 
 /**
- * The samples just BEFORE each trial's step, in that trial's frame, one entry
- * per trial that parseTrials returns. Display only: a trial starts on its
+ * The samples just BEFORE each step response's step, in that step response's frame, one entry
+ * per step response that splitStepResponses returns. Display only: a step response starts on its
  * step, so without these a thumbnail shows the response but not the step
- * that caused it. Each lead-in is `fraction` of its own trial's length, at
+ * that caused it. Each lead-in is `fraction` of its own step response's length, at
  * least two samples, and never reaches back past the previous step.
  */
-export function trialLeadIns(xs: Float64Array, ys: Float64Array, fraction: number): Trial[] {
+export function responseLeadIns(xs: Float64Array, ys: Float64Array, fraction: number): StepResponse[] {
   const indices = stepIndices(xs, ys);
-  const leads: Trial[] = [];
+  const leads: StepResponse[] = [];
   for (let i1 = 1; i1 < indices.length - 1; i1++) {
     const shift = xs[indices[i1] - 1];
     const end = indices[i1];

@@ -9,16 +9,16 @@ frequency, as continuous- and discrete-time transfer functions.
 1. **Live experiment** — a target line jumps to a random vertical position
    every few seconds (a step input). You track it with the pointer. Both
    positions are recorded at a configurable sample rate.
-2. **Analysis** — the recording is split into trials at each step, the
+2. **Analysis** — the recording is split into step responses at each step, the
    target/response pair is deconvolved to get an impulse response `h[n]`,
-   and the trial is curve-fit (brute-force, coarse-to-fine grid search) to a
+   and the step response is curve-fit (brute-force, coarse-to-fine grid search) to a
    first-order and a second-order discrete-time pole model.
 3. **Laplace domain** — the identified discrete poles are converted to their
    continuous-time (`s`-plane) equivalents, and displayed as a standard
    second-order transfer function `H(s) = ωn² / (s² + 2ζωn·s + ωn²)` with its
    natural frequency, damping ratio, and pure time delay.
 
-Identification runs **as you record**: each trial is identified the moment it
+Identification runs **as you record**: each step response is identified the moment it
 closes (~13 ms), so the model on screen firms up step by step instead of
 appearing all at once at the end.
 
@@ -27,24 +27,24 @@ useful for re-analyzing old recordings.
 
 ## The interface
 
-- **No modal.** The plot, the identified model, and the per-trial evidence
+- **No modal.** The plot, the identified model, and the per-response evidence
   share one scrolling page. You can watch ζ settle while you are still
   tracking.
 - **The plot states its own affordance.** The instruction list is gone; the
   plot says `Click the plot to start`, then `Recording · N steps · Ms`.
   Space bar works too.
-- **Trials are objects, not table rows.** Each step becomes a card
+- **Step responses are objects, not table rows.** Each step becomes a card
   with a thumbnail of the step and the response to it. Untick one and every
   number above re-derives from what is left — outlier rejection is a decision
   you make and see, not a heuristic that happens to you.
 - **Fit error is measured against the step that provoked it.** Steps are drawn
-  from a 3× range of sizes, so raw pixels are not comparable between trials:
-  on the reference recording trial 3 (9.1 px on a 39 px step) reads as better than
-  trial 2 (11.0 px on 77 px) in pixels, and far worse — 23% against 14% — as a
-  fraction of the step. Trials are flagged at 3× the median in *both*
+  from a 3× range of sizes, so raw pixels are not comparable between step responses:
+  on the reference recording step response 3 (9.1 px on a 39 px step) reads as better than
+  step response 2 (11.0 px on 77 px) in pixels, and far worse — 23% against 14% — as a
+  fraction of the step. Step responses are flagged at 3× the median in *both*
   directions: a fit far worse than its peers did not measure the same system,
   and a fit far better is just as suspect. The reference recording has one of the
-  latter, at 0.3% where every other trial sits above 10% — a trial with almost
+  latter, at 0.3% where every other step response sits above 10% — a step response with almost
   no dynamics in it, contributing a confident number about nothing.
 - **The headline is about you**, not about the polynomial: reaction delay,
   overshoot, damping, natural frequency. `H(s)` is set as an actual fraction
@@ -58,7 +58,7 @@ useful for re-analyzing old recordings.
   input so a tablet works, and a data palette validated for colour-vision
   deficiency.
 - On a wide screen the plot is a full-width row with the readout and the
-  trials sharing the space beneath it; both cards use container queries, so
+  step responses sharing the space beneath it; both cards use container queries, so
   they lay themselves out by the room they actually have rather than by the
   size of the window. Settings and the theme persist in `localStorage`;
   recordings deliberately do not.
@@ -135,7 +135,7 @@ src/
     complex.ts       complex-number helpers (magnitude/phase)
     dsp.ts           DFT and deconvolution
     poleConversion.ts  continuous (s) <-> discrete (z) pole mapping
-    trials.ts        splitting a recording into trials, padding
+    stepResponses.ts  splitting a recording into step responses, padding
     curveFit.ts       1-pole and 2-pole time-domain curve fitting
     analysis.ts       orchestrates the full pipeline + difference-equation /
                        transfer-function formatting

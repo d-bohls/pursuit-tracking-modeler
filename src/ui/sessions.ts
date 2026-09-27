@@ -4,36 +4,38 @@
 import type { SimulationMode } from './experiment';
 
 /** The numbers a list row shows, stored so the list never re-identifies anything. */
-export interface RecordingSummary {
-  trials: number;
-  /** Trials still in the model; the numbers below are NaN when this is 0. */
+export interface SessionSummary {
+  /** Step responses in the session. Sessions saved before the rename have `trials` instead. */
+  responses: number;
+  /** Step responses still in the model; the numbers below are NaN when this is 0. */
   included: number;
   zeta: number;
   wn: number;
   delayMs: number;
 }
 
-export interface Recording {
+export interface Session {
   id: number;
   createdAt: number;
   /** Who tracked: you, or the model during a self-test run. */
   source: SimulationMode;
-  /** Set when the recording came from a file rather than from this app. */
+  /** Set when the session came from a file rather than from this app. */
   fileName?: string;
   samplePeriodMs: number;
   xs: Float64Array;
   ys: Float64Array;
-  /** Trials left out of the model, by index. */
+  /** Step responses left out of the model, by index. */
   excluded: number[];
   note: string;
-  summary: RecordingSummary | null;
+  summary: SessionSummary | null;
   /** Content hash, so importing the same file twice keeps one copy. */
   hash: string;
 }
 
-export type NewRecording = Omit<Recording, 'id'>;
+export type NewSession = Omit<Session, 'id'>;
 
 const DB_NAME = 'tracking-lab';
+// Named before sessions were called sessions; renaming it would strand every saved one.
 const STORE = 'recordings';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -82,27 +84,27 @@ export function hashSamples(xs: Float64Array, ys: Float64Array): string {
 }
 
 /** Every recording, newest first. */
-export async function listRecordings(): Promise<Recording[]> {
-  const all = await request<Recording[]>('readonly', (s) => s.getAll());
+export async function listSessions(): Promise<Session[]> {
+  const all = await request<Session[]>('readonly', (s) => s.getAll());
   return all.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function getRecording(id: number): Promise<Recording | undefined> {
-  return request<Recording | undefined>('readonly', (s) => s.get(id));
+export async function getSession(id: number): Promise<Session | undefined> {
+  return request<Session | undefined>('readonly', (s) => s.get(id));
 }
 
-export async function findByHash(hash: string): Promise<Recording | undefined> {
-  return request<Recording | undefined>('readonly', (s) => s.index('hash').get(hash));
+export async function findByHash(hash: string): Promise<Session | undefined> {
+  return request<Session | undefined>('readonly', (s) => s.index('hash').get(hash));
 }
 
-export async function addRecording(rec: NewRecording): Promise<number> {
-  return request<IDBValidKey>('readwrite', (s) => s.add(rec)).then((key) => key as number);
+export async function addSession(session: NewSession): Promise<number> {
+  return request<IDBValidKey>('readwrite', (s) => s.add(session)).then((key) => key as number);
 }
 
-/** Merges `patch` into a stored recording. A missing id is ignored: it was deleted. */
-export async function updateRecording(id: number, patch: Partial<NewRecording>): Promise<void> {
+/** Merges `patch` into a stored session. A missing id is ignored: it was deleted. */
+export async function updateSession(id: number, patch: Partial<NewSession>): Promise<void> {
   // Read and write in ONE transaction. Two separate ones let a note edit and
-  // a trial toggle landing together each write back a stale copy of the other.
+  // a step response toggle landing together each write back a stale copy of the other.
   const db = await open();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
@@ -116,6 +118,6 @@ export async function updateRecording(id: number, patch: Partial<NewRecording>):
   });
 }
 
-export async function deleteRecording(id: number): Promise<void> {
+export async function deleteSession(id: number): Promise<void> {
   await request('readwrite', (s) => s.delete(id));
 }

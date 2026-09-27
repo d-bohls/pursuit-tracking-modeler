@@ -19,7 +19,7 @@ const dataPath = join(root, 'test/data/reference-data.txt');
 
 // zeta of the built-in demo pole, and of the model the reference recording yields.
 const DEMO_ZETA = 0.6185;
-const IDENTIFIED_ZETA = 0.0767; // median of the trials under output-error identification
+const IDENTIFIED_ZETA = 0.0767; // median of the step responses under output-error identification
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -62,7 +62,7 @@ if (!/your identified model/.test(afterText)) fail(`readout should say it switch
 // The run controls live on the plot now, and the mode lives in Settings.
 await page.locator('#settingsBtn').click();
 // Fast pace: steps come at a random 1.5-2.5 s, so the 9 s run below always
-// completes several trials. At Normal pace (3-5 s) it sometimes got none.
+// completes several step responses. At Normal pace (3-5 s) it sometimes got none.
 await page.locator('#paceGroup button[data-pace="2000"]').click();
 // The mode is a self-test now, tucked inside the Diagnostic self-test disclosure.
 await page.locator('#advancedSettings summary').click();
@@ -83,10 +83,10 @@ if (legend === 'You') fail(`the legend captions the model run's trace "You"`);
 
 // Measure overshoot directly from the recorded samples: for each step of the
 // target, how far past it did the simulated response travel? The samples are
-// in the newest recording's Data view.
-await page.locator('#dataBtn').click();
+// in the newest session's Data view.
+await page.locator('#sessionsBtn').click();
 await page.waitForTimeout(300);
-await page.locator('#libraryList .rec-data').first().click();
+await page.locator('#sessionList .session-data').first().click();
 await page.waitForTimeout(200);
 const overshoot = await page.locator('#samplesOut').evaluate((el) => {
   const rows = el.value

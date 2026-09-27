@@ -19,7 +19,7 @@ import {
 export type SimulationMode = 'none' | 'first' | 'second';
 
 export interface ExperimentConfig {
-  trialPeriodMs: number;
+  stepPeriodMs: number;
   samplePeriodMs: number;
   scrollPeriodMs: number;
   simulationMode: SimulationMode;
@@ -53,14 +53,14 @@ export interface ExperimentState {
 export const LOGICAL_HEIGHT = 493;
 
 /**
- * A run ends itself after this many complete trials. A trial runs from one
- * step to the next, so it takes MAX_TRIALS + 1 steps: the last one only
- * closes trial MAX_TRIALS off.
+ * A run ends itself after this many complete step responses. A step response runs from one
+ * step to the next, so it takes MAX_RESPONSES + 1 steps: the last one only
+ * closes step response MAX_RESPONSES off.
  */
-export const MAX_TRIALS = 10;
+export const MAX_RESPONSES = 10;
 
 /**
- * Each gap between steps is the trial period scaled by a random factor in
+ * Each gap between steps is the step period scaled by a random factor in
  * [1 - JITTER, 1 + JITTER]. On a fixed beat you learn when the next step is
  * due, and a step you can anticipate measures your timing, not your reaction:
  * the identified delay comes out short. The mean gap is still the period.
@@ -120,7 +120,7 @@ interface Frame {
   tracker: number;
   /** The model's prediction, when it is being drawn. */
   model: number | null;
-  /** True on the column where the target stepped -- drawn as a trial divider. */
+  /** True on the column where the target stepped -- drawn as a step divider. */
   stepped: boolean;
 }
 
@@ -164,7 +164,7 @@ export class TrackingExperiment {
   private active = false;
   private phase: Phase = 'idle';
   private startedAt = 0;
-  private trialTimerCount = 0;
+  private stepCount = 0;
 
   /** Replay state: a finished recording played back with the model beside it. */
   private replayXs: Float64Array = new Float64Array();
@@ -176,7 +176,7 @@ export class TrackingExperiment {
 
   private sampleTimerHandle: ReturnType<typeof setInterval> | null = null;
   private scrollTimerHandle: ReturnType<typeof setInterval> | null = null;
-  private trialTimerHandle: ReturnType<typeof setTimeout> | null = null;
+  private stepTimerHandle: ReturnType<typeof setTimeout> | null = null;
   private frameHandle: number | null = null;
 
   private onEnd: (result: ExperimentResult) => void;
@@ -196,7 +196,7 @@ export class TrackingExperiment {
     muted: '#898781',
     target: '#2a78d6',
     you: '#eb6834',
-    model: '#1baf7a',
+    model: '#15946a',
   };
 
   /** Continuous-domain model the simulation and the ghost play back. */
@@ -285,7 +285,7 @@ export class TrackingExperiment {
       muted: read('--plot-muted', '#898781'),
       target: read('--series-target', '#2a78d6'),
       you: read('--series-you', '#eb6834'),
-      model: read('--series-model', '#1baf7a'),
+      model: read('--series-model', '#15946a'),
     };
     this.draw();
   }
@@ -356,7 +356,7 @@ export class TrackingExperiment {
     const total = this.replayXs.length * this.replayPeriodMs;
     this.onState({
       phase,
-      steps: this.trialTimerCount,
+      steps: this.stepCount,
       samples: this.xs.length,
       elapsedMs: this.startedAt ? performance.now() - this.startedAt : 0,
       progress: phase === 'replaying' && total > 0 ? Math.min(1, this.replayElapsedMs / total) : 0,
@@ -367,14 +367,14 @@ export class TrackingExperiment {
     if (this.active) return;
     this.active = true;
     this.startedAt = performance.now();
-    this.trialTimerCount = 0;
+    this.stepCount = 0;
     this.xs = [];
     this.ys = [];
     this.history = [];
     this.historyDropped = 0;
-    // onTrialTick raises this and only the next onScrollTick lowers it, so a
+    // onStepTick raises this and only the next onScrollTick lowers it, so a
     // run stopped inside that 50 ms window leaves it set -- and the next run's
-    // first column would be drawn as a trial divider for a step that never
+    // first column would be drawn as a step divider for a step that never
     // happened.
     this.steppedThisColumn = false;
     this.currentTargetY = this.centerY;
@@ -430,7 +430,7 @@ export class TrackingExperiment {
     this.replayYs = ys;
     this.replayPeriodMs = samplePeriodMs;
     this.replayElapsedMs = 0;
-    this.trialTimerCount = 0;
+    this.stepCount = 0;
     this.history = [];
     this.historyDropped = 0;
 
@@ -479,7 +479,7 @@ export class TrackingExperiment {
     this.currentTargetY = this.replayXs[i];
     this.currentTrackerY = this.replayYs[i];
     this.currentModelY = this.replayModel[i];
-    if (stepped) this.trialTimerCount += 1;
+    if (stepped) this.stepCount += 1;
 
     this.history.push({
       target: this.currentTargetY,
@@ -532,40 +532,40 @@ export class TrackingExperiment {
     for (const h of [this.sampleTimerHandle, this.scrollTimerHandle]) {
       if (h) clearInterval(h);
     }
-    if (this.trialTimerHandle) clearTimeout(this.trialTimerHandle);
-    this.sampleTimerHandle = this.scrollTimerHandle = this.trialTimerHandle = null;
+    if (this.stepTimerHandle) clearTimeout(this.stepTimerHandle);
+    this.sampleTimerHandle = this.scrollTimerHandle = this.stepTimerHandle = null;
     this.stopDrawing();
     this.draw();
     this.emitState('finished');
     this.onEnd(this.getSamples());
   }
 
-  /** Arms the next step, a randomly jittered trial period from now. */
+  /** Arms the next step, a randomly jittered step period from now. */
   private scheduleStep() {
     const factor = 1 + STEP_JITTER * (2 * Math.random() - 1);
-    this.trialTimerHandle = setTimeout(() => {
-      this.onTrialTick();
+    this.stepTimerHandle = setTimeout(() => {
+      this.onStepTick();
       if (!this.active || this.phase !== 'recording') return;
-      if (this.trialTimerCount <= MAX_TRIALS) {
+      if (this.stepCount <= MAX_RESPONSES) {
         this.scheduleStep();
       } else {
         // That was the closing step. Stay just long enough for samples to
         // land at the new level -- that is how a step is seen at all -- then
-        // stop, rather than recording a whole trial period nobody will use.
-        this.trialTimerHandle = setTimeout(() => this.end(), this.config.samplePeriodMs * 3.5);
+        // stop, rather than recording a whole step period nobody will use.
+        this.stepTimerHandle = setTimeout(() => this.end(), this.config.samplePeriodMs * 3.5);
       }
-    }, this.config.trialPeriodMs * factor);
+    }, this.config.stepPeriodMs * factor);
   }
 
-  private onTrialTick() {
-    this.trialTimerCount += 1;
+  private onStepTick() {
+    this.stepCount += 1;
     let dy = this.randomInt(this.minDy, this.maxDy);
     if (this.randomInt(0, 1) === 0) dy = -dy;
     if (this.currentTargetY + dy < this.minY || this.currentTargetY + dy > this.maxY) dy = -dy;
     this.currentTargetY += dy;
     this.steppedThisColumn = true;
-    // A step is what closes out the previous trial, so this is the moment a
-    // newly analysable trial appears -- see the incremental analysis in main.
+    // A step is what closes out the previous step response, so this is the moment a
+    // newly analysable step response appears -- see the incremental analysis in main.
     this.onStep();
     this.emitState('recording');
   }
@@ -578,7 +578,7 @@ export class TrackingExperiment {
     this.ys.push(this.currentTrackerY);
 
     // The status carries a running clock, and this is the only timer that
-    // fires often enough to move it -- the trial timer ticks once every few
+    // fires often enough to move it -- the step response timer ticks once every few
     // seconds, which left the reading frozen between steps.
     this.emitState('recording');
   }
@@ -684,7 +684,7 @@ export class TrackingExperiment {
     const xAt = (i: number) => anchorX - (n - 1 - i) * pxPerColumn;
     const start = Math.max(0, n - 1 - Math.ceil(anchorX / pxPerColumn));
 
-    // Trial dividers: where the target stepped, i.e. where one trial ends and
+    // Step dividers: where the target stepped, i.e. where one step response ends and
     // the next begins. The analysis splits the recording at exactly these
     // instants, so drawing them makes the unit of analysis visible.
     // Muted rather than axis grey: at axis contrast the dividers were easy
@@ -742,10 +742,9 @@ export class TrackingExperiment {
       ctx.setLineDash([]);
     };
 
-    // The model prediction is dashed as well as coloured: it is the one series
-    // that can sit under 3:1 against the light surface, so it never relies on
-    // hue alone (it is named in the legend too).
-    series((f) => f.model, this.palette.model, 2, [5, 4]);
+    // Solid like the other two: the dashed lines on this plot mark steps and
+    // the start of the run. Its green is dark enough to carry it on colour.
+    series((f) => f.model, this.palette.model, 2, []);
     series((f) => f.target, this.palette.target, 2, []);
     series((f) => f.tracker, this.palette.you, 2, []);
 

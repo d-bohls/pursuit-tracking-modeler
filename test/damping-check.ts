@@ -1,5 +1,5 @@
 // Identification must call a response what it is. Feeds exact step responses
-// of known pole pairs through the real per-trial analysis and checks the
+// of known pole pairs through the real per-response analysis and checks the
 // damping it reports.
 //
 // The bug this guards: the second-order fit only searched COMPLEX pole pairs
@@ -10,8 +10,8 @@
 //
 //   npx tsx test/damping-check.ts
 
-import { analyzeTrial, dampingCharacter, dampingMetrics } from '../src/engine/analysis';
-import { padTrials } from '../src/engine/trials';
+import { analyzeStepResponse, dampingCharacter, dampingMetrics } from '../src/engine/analysis';
+import { padResponses } from '../src/engine/stepResponses';
 
 /** Unit-DC step response of y[n] = c1*y[n-1] - c2*y[n-2] + g*x[n-D], with optional noise. */
 function stepResponse(c1: number, c2: number, D: number, noise = 0) {
@@ -44,9 +44,9 @@ const cases: Array<[string, ReturnType<typeof stepResponse>, string]> = [
 ];
 
 let failed = false;
-for (const [label, trial, expected] of cases) {
-  const [padded] = padTrials([trial], 10);
-  const { zeta } = dampingMetrics(analyzeTrial(trial, padded, 100).continuous);
+for (const [label, response, expected] of cases) {
+  const [padded] = padResponses([response], 10);
+  const { zeta } = dampingMetrics(analyzeStepResponse(response, padded, 100).continuous);
   const got = dampingCharacter(zeta);
   const ok = got === expected;
   if (!ok) failed = true;

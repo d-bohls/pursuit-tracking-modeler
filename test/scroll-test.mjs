@@ -54,7 +54,7 @@ await page.keyboard.press('Space'); // explicit stop
 // Measure ink: for each column, how many DATA pixels?
 //
 // "Data pixel" means chromatic -- the series palette is saturated blue /
-// orange / aqua, while every piece of chrome (surface, centre line, trial
+// orange / aqua, while every piece of chrome (surface, centre line, step response
 // dividers) is neutral grey. Thresholding on darkness instead would count the
 // full-width centre line in every column and make the scroll check vacuous.
 const stats = await page.locator('#graph').evaluate((c) => {

@@ -1,7 +1,7 @@
 import './style.css';
 import {
   TrackingExperiment,
-  MAX_TRIALS,
+  MAX_RESPONSES,
   dampingOf,
   type ExperimentConfig,
   type ExperimentState,
@@ -13,36 +13,36 @@ import {
   plotFrequencyResponse,
   plotPoleLocations,
   plotStepResponse,
-  plotTrialSparkline,
+  plotResponseSparkline,
   poleGeometry,
 } from './ui/plotting';
 import { simulateSecondOrder } from './engine/curveFit';
 import {
-  addRecording,
-  deleteRecording,
+  addSession,
+  deleteSession,
   findByHash,
-  getRecording,
+  getSession,
   hashSamples,
-  listRecordings,
-  updateRecording,
-  type Recording,
-  type RecordingSummary,
-} from './ui/library';
+  listSessions,
+  updateSession,
+  type Session,
+  type SessionSummary,
+} from './ui/sessions';
 import { discretePairToContinuous, pairProduct } from './engine/poleConversion';
 import {
-  analyzeTrial,
-  aggregateTrials,
+  analyzeStepResponse,
+  aggregateResponses,
   secondOrderDifferenceEquation,
   dampingMetrics,
   dampingCharacter,
   firstOrderMagnitudeResponse,
   secondOrderMagnitudeResponse,
-  type TrialAnalysis,
+  type StepResponseAnalysis,
 } from './engine/analysis';
-import { parseTrials, padTrials, trialLeadIns } from './engine/trials';
+import { splitStepResponses, padResponses, responseLeadIns } from './engine/stepResponses';
 import { dft } from './engine/dsp';
 import { magnitudeOfComplex } from './engine/complex';
-import { parseRecording, formatAllSamplesBlock } from './engine/dataFormat';
+import { parseSessionFile, formatAllSamplesBlock } from './engine/dataFormat';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -64,8 +64,8 @@ const recordBtn = $<HTMLButtonElement>('recordBtn');
 const replayBtn = $<HTMLButtonElement>('replayBtn');
 const settingsBtn = $<HTMLButtonElement>('settingsBtn');
 const settingsDialog = $<HTMLDialogElement>('settingsDialog');
-const dataDialog = $<HTMLDialogElement>('dataDialog');
-const dataBtn = $<HTMLButtonElement>('dataBtn');
+const sessionsDialog = $<HTMLDialogElement>('sessionsDialog');
+const sessionsBtn = $<HTMLButtonElement>('sessionsBtn');
 const themeGroup = $<HTMLDivElement>('themeGroup');
 const paceGroup = $<HTMLDivElement>('paceGroup');
 const resetSettingsBtn = $<HTMLButtonElement>('resetSettingsBtn');
@@ -75,7 +75,7 @@ const readoutEl = $<HTMLDivElement>('readout');
 const readoutSource = $<HTMLParagraphElement>('readoutSource');
 const readoutHeading = $<HTMLHeadingElement>('readoutHeading');
 const filmstripEl = $<HTMLDivElement>('filmstrip');
-const trialDetailHeading = $<HTMLHeadingElement>('trialDetailHeading');
+const responseDetailHeading = $<HTMLHeadingElement>('responseDetailHeading');
 const freqGraph = $<HTMLCanvasElement>('freqGraph');
 const poleGraph = $<HTMLCanvasElement>('poleGraph');
 
@@ -86,12 +86,12 @@ const samplesOut = $<HTMLTextAreaElement>('samplesOut');
 const samplesDialog = $<HTMLDialogElement>('samplesDialog');
 const samplesTitle = $<HTMLHeadingElement>('samplesTitle');
 const samplesMeta = $<HTMLParagraphElement>('samplesMeta');
-const libraryList = $<HTMLUListElement>('libraryList');
-const libraryEmpty = $<HTMLParagraphElement>('libraryEmpty');
-const libraryUnavailable = $<HTMLParagraphElement>('libraryUnavailable');
+const sessionList = $<HTMLUListElement>('sessionList');
+const sessionsEmpty = $<HTMLParagraphElement>('sessionsEmpty');
+const sessionsUnavailable = $<HTMLParagraphElement>('sessionsUnavailable');
 const simModelInfo = $<HTMLParagraphElement>('simModelInfo');
 
-const trialPeriodInput = $<HTMLInputElement>('trialPeriod');
+const stepPeriodInput = $<HTMLInputElement>('stepPeriod');
 const samplePeriodInput = $<HTMLInputElement>('samplePeriod');
 const simulationModeSelect = $<HTMLSelectElement>('simulationMode');
 const discretePointsCheckbox = $<HTMLInputElement>('discretePoints');
@@ -100,22 +100,23 @@ const discretePointsCheckbox = $<HTMLInputElement>('discretePoints');
 const SIM_SOURCE: 'mean' | 'median' = 'median';
 
 /**
- * Identified trials for the recording on screen, in recording order. Built up
- * incrementally while recording (one trial identified per step, ~13 ms) and
+ * Identified step responses for the session on screen, in recording order. Built up
+ * incrementally while recording (one step response identified per step, ~13 ms) and
  * all at once when a data file is loaded.
  */
-let trials: TrialAnalysis[] = [];
-/** The stored recording on screen, which notes and unticked trials are saved to. */
-let currentRecordingId: number | null = null;
-const recordingNameEl = $<HTMLSpanElement>('recordingName');
-const recordingSepEl = $<HTMLSpanElement>('recordingSep');
-const recordingNameInput = $<HTMLInputElement>('recordingNameInput');
+let responses: StepResponseAnalysis[] = [];
+/** The stored session on screen, which notes and unticked step responses are saved to. */
+let currentSessionId: number | null = null;
+const sessionNameEl = $<HTMLSpanElement>('sessionName');
+const sessionSepEl = $<HTMLSpanElement>('sessionSep');
+const sessionNameInput = $<HTMLInputElement>('sessionNameInput');
 
 /**
  * Which recording is open, remembered so a reload reopens THAT one rather
  * than whichever is newest. Browser storage: losing it only means the newest
  * is reopened instead, so a failure is ignored.
  */
+// The key keeps its old name, so the session open before the rename still reopens.
 const OPEN_KEY = 'tracking-lab.openRecording';
 function rememberOpen(id: number | null) {
   try {
@@ -135,44 +136,44 @@ function rememberedOpen(): number | null {
 }
 
 /**
- * Shows which recording the trials belong to, in the heading over the trials. An empty
- * name leaves it as plain "Recording": nothing is kept yet, or the
- * trials on screen belong to a run still in progress.
+ * Shows which session the step responses belong to, in the heading over the step responses. An empty
+ * name leaves it as plain "Session": nothing is kept yet, or the
+ * step responses on screen belong to a run still in progress.
  */
-function setRecordingName(name: string) {
+function setSessionName(name: string) {
   cancelRename();
-  recordingSepEl.hidden = recordingNameEl.hidden = !name;
-  recordingNameEl.textContent = name;
-  recordingNameEl.title = name ? `${name} — click to rename` : '';
-  recordingNameEl.parentElement!.title = name ? `Recording · ${name}` : '';
+  sessionSepEl.hidden = sessionNameEl.hidden = !name;
+  sessionNameEl.textContent = name;
+  sessionNameEl.title = name ? `${name} — click to rename` : '';
+  sessionNameEl.parentElement!.title = name ? `Session · ${name}` : '';
 }
 
 /*
  * Renaming in place: the name in the heading turns into a field. What you
- * type is the recording's note -- the same one the Recordings list edits --
+ * type is the session's note -- the same one the Sessions list edits --
  * and clearing it falls back to the file name or the time, shown as the
  * placeholder so you can see what you would get.
  */
-let renaming: { id: number; rec: Recording } | null = null;
+let renaming: { id: number; session: Session } | null = null;
 
 async function startRename() {
-  const id = currentRecordingId;
+  const id = currentSessionId;
   if (id === null || renaming) return;
-  const rec = await safely(() => getRecording(id));
-  if (!rec || id !== currentRecordingId) return;
-  renaming = { id, rec };
-  recordingNameInput.value = rec.note;
-  recordingNameInput.placeholder = recordingName({ ...rec, note: '' });
-  recordingNameEl.hidden = true;
-  recordingNameInput.hidden = false;
-  recordingNameInput.focus();
-  recordingNameInput.select();
+  const session = await safely(() => getSession(id));
+  if (!session || id !== currentSessionId) return;
+  renaming = { id, session };
+  sessionNameInput.value = session.note;
+  sessionNameInput.placeholder = sessionName({ ...session, note: '' });
+  sessionNameEl.hidden = true;
+  sessionNameInput.hidden = false;
+  sessionNameInput.focus();
+  sessionNameInput.select();
 }
 
 function endRename() {
   renaming = null;
-  recordingNameInput.hidden = true;
-  recordingNameEl.hidden = recordingNameEl.textContent === '';
+  sessionNameInput.hidden = true;
+  sessionNameEl.hidden = sessionNameEl.textContent === '';
 }
 
 function cancelRename() {
@@ -181,17 +182,17 @@ function cancelRename() {
 
 function commitRename() {
   if (!renaming) return;
-  const { id, rec } = renaming;
+  const { id, session } = renaming;
   endRename();
-  const note = recordingNameInput.value.trim();
-  if (note === rec.note) return;
-  rec.note = note;
-  void safely(() => updateRecording(id, { note }));
-  if (id === currentRecordingId) setRecordingName(recordingName(rec));
+  const note = sessionNameInput.value.trim();
+  if (note === session.note) return;
+  session.note = note;
+  void safely(() => updateSession(id, { note }));
+  if (id === currentSessionId) setSessionName(sessionName(session));
 }
 
-recordingNameEl.addEventListener('click', () => void startRename());
-recordingNameEl.addEventListener('keydown', (e) => {
+sessionNameEl.addEventListener('click', () => void startRename());
+sessionNameEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
     // Space would otherwise reach the page's handler and start a run.
@@ -199,41 +200,41 @@ recordingNameEl.addEventListener('keydown', (e) => {
     void startRename();
   }
 });
-recordingNameInput.addEventListener('keydown', (e) => {
+sessionNameInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     commitRename();
-    recordingNameEl.focus();
+    sessionNameEl.focus();
   } else if (e.key === 'Escape') {
     e.preventDefault();
     cancelRename();
-    recordingNameEl.focus();
+    sessionNameEl.focus();
   }
 });
-recordingNameInput.addEventListener('blur', commitRename);
+sessionNameInput.addEventListener('blur', commitRename);
 
 /** Your note if you wrote one, else the file it came from, else when it was made. */
-function recordingName(rec: { note: string; fileName?: string; createdAt: number }): string {
-  return rec.note.trim() || rec.fileName || whenLabel(rec.createdAt);
+function sessionName(session: { note: string; fileName?: string; createdAt: number }): string {
+  return session.note.trim() || session.fileName || whenLabel(session.createdAt);
 }
 
-/** A few samples from before each trial's step, so its thumbnail shows the step. */
-let leadIns: ReturnType<typeof trialLeadIns> = [];
-/** The lead-in is this fraction of the trial, and at least two samples. */
+/** A few samples from before each step response's step, so its thumbnail shows the step. */
+let leadIns: ReturnType<typeof responseLeadIns> = [];
+/** The lead-in is this fraction of the step response, and at least two samples. */
 const LEAD_FRACTION = 0.1;
-/** Trials the operator has taken out of the model. */
+/** Step responses the operator has taken out of the model. */
 const excluded = new Set<number>();
 let inspected = 0;
 /**
- * While a run is live, the newest trial is selected as it arrives. Picking an
- * earlier one pins it, so trials landing mid-inspection do not yank it away;
+ * While a run is live, the newest step response is selected as it arrives. Picking an
+ * earlier one pins it, so step responses landing mid-inspection do not yank it away;
  * picking the newest again resumes following.
  */
 let followLatest = true;
 /** The samples on screen, and the period they were recorded at -- which paces a replay. */
 let lastSamples: { xs: Float64Array; ys: Float64Array; samplePeriodMs: number } | null = null;
 let identifiedYet = false;
-/** The sample period the trials on screen were identified at. */
+/** The sample period the step responses on screen were identified at. */
 let analysisSamplePeriodMs = 100;
 let syncHandle: ReturnType<typeof setTimeout> | null = null;
 /** A run has started but has not yet earned the right to clear the old one. */
@@ -274,7 +275,7 @@ let themeChoice: ThemeChoice = 'system';
 
 /** What the controls read with nothing stored, and what Reset restores. */
 const DEFAULT_SETTINGS = {
-  trialPeriodMs: 4000,
+  stepPeriodMs: 4000,
   samplePeriodMs: 100,
   simulationMode: 'none',
   discretePoints: false,
@@ -282,6 +283,8 @@ const DEFAULT_SETTINGS = {
 };
 
 interface StoredSettings {
+  stepPeriodMs?: number;
+  /** What stepPeriodMs was saved as before the rename. */
   trialPeriodMs?: number;
   samplePeriodMs?: number;
   discretePoints?: boolean;
@@ -305,7 +308,7 @@ function readSettings(): StoredSettings {
 function saveSettings() {
   try {
     const stored: StoredSettings = {
-      trialPeriodMs: currentConfig().trialPeriodMs,
+      stepPeriodMs: currentConfig().stepPeriodMs,
       samplePeriodMs: currentConfig().samplePeriodMs,
       discretePoints: discretePointsCheckbox.checked,
     };
@@ -319,7 +322,8 @@ function saveSettings() {
 /** Applies stored settings to the controls, before anything reads them. */
 function applyStoredSettings() {
   const s = readSettings();
-  if (typeof s.trialPeriodMs === 'number') trialPeriodInput.value = String(clamp(s.trialPeriodMs, 1000, 10000));
+  const stepPeriodMs = s.stepPeriodMs ?? s.trialPeriodMs;
+  if (typeof stepPeriodMs === 'number') stepPeriodInput.value = String(clamp(stepPeriodMs, 1000, 10000));
   if (typeof s.samplePeriodMs === 'number') samplePeriodInput.value = String(clamp(s.samplePeriodMs, 50, 500));
   // The self-test mode is deliberately NOT restored. Left on a model, it
   // would make the next visit's Record a model run -- every session starts
@@ -349,7 +353,7 @@ applyStoredSettings();
 
 function currentConfig(): ExperimentConfig {
   return {
-    trialPeriodMs: clamp(Number(trialPeriodInput.value) || 4000, 1000, 10000),
+    stepPeriodMs: clamp(Number(stepPeriodInput.value) || 4000, 1000, 10000),
     samplePeriodMs: clamp(Number(samplePeriodInput.value) || 100, 50, 500),
     scrollPeriodMs: 50,
     simulationMode: simulationModeSelect.value as SimulationMode,
@@ -363,14 +367,14 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
   onGraphPress: stopRun,
   onTouchStart: startRecording,
   onEnd: ({ xs, ys }) => {
-    // A run that captured nothing must not replace the recording that was
-    // already loaded. Starting it cleared the trials, so rebuild them from the
+    // A run that captured nothing must not replace the session that was
+    // already loaded. Starting it cleared the step responses, so rebuild them from the
     // recording that is being kept -- otherwise the app is left holding data
     // with no analysis of it.
     // Decide from THIS run's samples, not from pendingReset: a run can end
-    // between its last trial closing and the sync that would have noticed,
+    // between its last step response closing and the sync that would have noticed,
     // and that run has still earned its keep.
-    const produced = parseTrials(xs, ys).length > 0;
+    const produced = splitStepResponses(xs, ys).length > 0;
     if (produced) {
       if (pendingReset) clearAnalysis(pendingSamplePeriodMs, pendingSource);
       lastSamples = { xs, ys, samplePeriodMs: analysisSamplePeriodMs };
@@ -379,24 +383,24 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
       pendingReset = false;
     }
     syncAnalysis();
-    if (produced) void keepRecording(xs, ys, runMode, analysisSamplePeriodMs);
+    if (produced) void keepSession(xs, ys, runMode, analysisSamplePeriodMs);
     statusEl.textContent = produced
-      ? `${runMode === 'none' ? 'Stopped' : 'Model run stopped'} · ${xs.length} samples · ${trialCount(trials.length)}`
+      ? `${runMode === 'none' ? 'Stopped' : 'Model run stopped'} · ${xs.length} samples · ${responseCount(responses.length)}`
       : xs.length < 2
         ? 'Stopped · nothing recorded'
-        : 'Stopped · no complete trials';
+        : 'Stopped · no complete step responses';
     // The 'finished' state is emitted BEFORE this callback, so the render that
     // went with it still saw the previous recording -- or none at all. Re-check
     // now that there is something to replay.
     updateActionAvailability();
     renderGuide('finished');
     // Announced from here rather than from renderState: only now are the
-    // finished run's trials counted, and onEnd fires for recordings only, so
+    // finished run's step responses counted, and onEnd fires for recordings only, so
     // a replay never claims to have recorded anything.
-    if (produced) flash(`${runMode === 'none' ? 'Recording finished' : 'Model run finished'} · ${trialCount(trials.length)}`);
+    if (produced) flash(`${runMode === 'none' ? 'Session recorded' : 'Model run finished'} · ${responseCount(responses.length)}`);
     else if (xs.length < 2) flash('Nothing recorded');
     // Only claim to have kept something when there was something to keep.
-    else flash(lastSamples ? 'No complete trials · previous recording kept' : 'No complete trials');
+    else flash(lastSamples ? 'No complete step responses · previous session kept' : 'No complete step responses');
   },
 });
 
@@ -432,7 +436,7 @@ new ResizeObserver(() => {
 /**
  * Takes the message down. It is news about the run that just ended, so it
  * stays until something moves on from that run: a button is reached for, a
- * run starts, or another recording is opened in its place.
+ * run starts, or another session is opened in its place.
  */
 function dismissFlash() {
   stageFlash.hidden = true;
@@ -472,12 +476,12 @@ function renderState(state: ExperimentState) {
   syncLegend();
 
   if (recording) {
-    // `steps` counts target jumps, and the trial under way is the one that
+    // `steps` counts target jumps, and the step response under way is the one that
     // began at the last jump -- so after three jumps you are recording the
-    // third trial, and before the first there is nothing yet. The run stops
+    // third step response, and before the first there is nothing yet. The run stops
     // itself at the limit, so say what the limit is; the closing step starts
-    // no new trial, so the count stops there.
-    const which = state.steps === 0 ? 'no trials yet' : `trial ${Math.min(state.steps, MAX_TRIALS)} of ${MAX_TRIALS}`;
+    // no new step response, so the count stops there.
+    const which = state.steps === 0 ? 'no steps yet' : `step ${Math.min(state.steps, MAX_RESPONSES)} of ${MAX_RESPONSES}`;
     const who = runMode === 'none' ? 'Recording' : `Model run (${runMode === 'first' ? 'first' : 'second'}-order)`;
     statusEl.textContent = `${who} · ${which} · ${elapsed(state.elapsedMs)}`;
   } else if (replaying) {
@@ -486,7 +490,7 @@ function renderState(state: ExperimentState) {
     statusEl.textContent = `Replaying · ${Math.round(state.progress * 100)}% · ${elapsed(state.elapsedMs)}`;
   } else if (state.phase === 'finished') {
     // A finished RECORDING gets its line from onEnd instead, which runs a
-    // moment later and is the only place the run's trials have been counted.
+    // moment later and is the only place the run's step responses have been counted.
     if (previousPhase === 'replaying') statusEl.textContent = 'Replay finished';
   } else {
     statusEl.textContent = 'Ready';
@@ -498,7 +502,7 @@ function renderState(state: ExperimentState) {
 /**
  * Running time to a tenth of a second, switching to m:ss.s past a minute.
  * The tenth is why onSampleTick emits state: a whole-second reading updated
- * only on trial ticks looks stopped between steps.
+ * only on step response ticks looks stopped between steps.
  */
 function elapsed(ms: number): string {
   const total = ms / 1000;
@@ -507,7 +511,7 @@ function elapsed(ms: number): string {
   return `${mins}:${(total - mins * 60).toFixed(1).padStart(4, '0')}`;
 }
 
-const trialCount = (n: number) => `${n} trial${n === 1 ? '' : 's'}`;
+const responseCount = (n: number) => `${n} step response${n === 1 ? '' : 's'}`;
 
 /**
  * True where the primary input cannot hover and is coarse -- a touchscreen.
@@ -521,7 +525,7 @@ let touchFirst = touchQuery.matches;
 touchQuery.addEventListener('change', () => {
   touchFirst = touchQuery.matches;
   renderGuide(experiment.getPhase());
-  renderTrialCount();
+  renderResponseCount();
 });
 
 /** Fills a list with one item per line of text. */
@@ -546,32 +550,27 @@ function renderGuide(phase: ExperimentState['phase']) {
     // Nothing for the hand to do: the model is the one tracking.
     items = [
       `The ${modelName(runMode)} is tracking the target, not you`,
-      touchFirst ? 'Tap the plot to stop the run' : 'Click the plot or press Space to stop',
+      touchFirst ? 'Tap the plot to stop the run' : 'Click the plot or press the Space bar to stop',
     ];
   } else if (phase === 'recording') {
     items = [
       touchFirst
         ? "Slide your finger up and down to match the target's height"
         : "Move your pointer up and down to match the target's height",
-      touchFirst ? 'Lift your finger to stop recording' : 'Click the plot or press Space to stop',
+      touchFirst ? 'Lift your finger to stop recording' : 'Click the plot or press the Space bar to stop',
     ];
   } else if (phase === 'replaying') {
-    items = [touchFirst ? 'Tap the plot to stop the replay' : 'Click the plot or press Space to stop'];
+    items = [touchFirst ? 'Tap the plot to stop the replay' : 'Click the plot or press the Space bar to stop'];
   } else {
-    const again = !!lastSamples;
-    // In the order of the buttons: Record, with Space beside it as another
-    // way to do the same thing, then Replay.
+    // In the order of the buttons: Record -- what to do, then how to start
+    // and stop -- then Replay. The same every time, sessions or not.
     items = [
+      `When recording, follow the target's height with your ${touchFirst ? 'finger' : 'pointer'}`,
       touchFirst
-        ? `Hold Record or the plot to record${again ? ' again' : ''}; lift to stop`
-        : again
-          ? currentRecordingId !== null
-            ? 'Record a new run; this one stays in Recordings'
-            : 'Record a new run, replacing this one'
-          : 'Record tracks your pointer height as you follow the target',
+        ? 'Hold the record button or the plot to record; lift to stop'
+        : 'Space bar also starts and stops recording',
+      'Replay this session with your model overlaid',
     ];
-    if (!touchFirst) items.push('Space bar also starts and stops a recording');
-    items.push('Replay the last recording with your model overlaid');
   }
   setList(stageGuide, items);
 }
@@ -594,14 +593,14 @@ function updateActionAvailability() {
   // The settings would change the sampling under a run that is using it.
   settingsBtn.disabled = running;
   replayBtn.title = !hasRun
-    ? 'Nothing to replay yet — record a run first, or open one from Recordings'
+    ? 'Nothing to replay yet — record a session first, or open one from Sessions'
     : running
       ? 'Available when this run stops'
-      : "Replay the last run with the model's response to the same steps overlaid";
+      : "Replay this session with the model's response to the same steps overlaid";
 }
 
 /**
- * A trial only becomes visible to parseTrials once a sample lands at the NEW
+ * A step response only becomes visible to splitStepResponses once a sample lands at the NEW
  * target value, so give the sampler a couple of ticks before re-splitting.
  */
 function scheduleSync() {
@@ -610,8 +609,8 @@ function scheduleSync() {
 }
 
 /**
- * Identifies whatever trials have completed but not yet been identified, then
- * redraws. Cheap enough to run mid-recording: each new trial costs one fit
+ * Identifies whatever step responses have completed but not yet been identified, then
+ * redraws. Cheap enough to run mid-recording: each new step response costs one fit
  * (~13 ms), rather than re-identifying the whole recording every time.
  */
 function syncAnalysis() {
@@ -619,25 +618,25 @@ function syncAnalysis() {
   const { xs, ys } = experiment.isActive() ? experiment.getSamples() : lastSamples ?? { xs: new Float64Array(), ys: new Float64Array() };
   if (xs.length === 0) return;
 
-  const raw = parseTrials(xs, ys);
+  const raw = splitStepResponses(xs, ys);
 
   // The previous run stays on screen until this one has something to replace
   // it WITH. Pressing Record used to blank the readout instantly, so a run
   // that turned out to be a misfire took the last good analysis with it.
   if (live && raw.length > 0) clearAnalysis(pendingSamplePeriodMs, pendingSource);
 
-  if (raw.length <= trials.length) {
+  if (raw.length <= responses.length) {
     renderResults();
     return;
   }
 
-  leadIns = trialLeadIns(xs, ys, LEAD_FRACTION);
-  const padded = padTrials(raw, 10);
-  for (let i = trials.length; i < raw.length; i++) {
-    trials.push(analyzeTrial(raw[i], padded[i], analysisSamplePeriodMs));
+  leadIns = responseLeadIns(xs, ys, LEAD_FRACTION);
+  const padded = padResponses(raw, 10);
+  for (let i = responses.length; i < raw.length; i++) {
+    responses.push(analyzeStepResponse(raw[i], padded[i], analysisSamplePeriodMs));
   }
   identifiedYet = true;
-  if (experiment.isActive() && followLatest) inspected = trials.length - 1;
+  if (experiment.isActive() && followLatest) inspected = responses.length - 1;
   pushModelToSimulation();
   renderResults();
   if (experiment.isActive() && followLatest) filmstripEl.scrollTo({ left: filmstripEl.scrollWidth });
@@ -649,11 +648,11 @@ function clearAnalysis(samplePeriodMs: number, source: SimulationMode) {
   // this reset is establishing.
   if (syncHandle) clearTimeout(syncHandle);
   syncHandle = null;
-  trials = [];
+  responses = [];
   leadIns = [];
   excluded.clear();
-  currentRecordingId = null;
-  setRecordingName('');
+  currentSessionId = null;
+  setSessionName('');
   inspected = 0;
   followLatest = true;
   analysisSamplePeriodMs = samplePeriodMs;
@@ -663,7 +662,7 @@ function clearAnalysis(samplePeriodMs: number, source: SimulationMode) {
 
 /**
  * Arms a reset for the next run without performing it. syncAnalysis carries
- * it out the moment that run produces its first trial, which is the first
+ * it out the moment that run produces its first step response, which is the first
  * moment there is anything to show in place of what is on screen.
  */
 function armReset(samplePeriodMs: number, source: SimulationMode) {
@@ -676,22 +675,22 @@ function armReset(samplePeriodMs: number, source: SimulationMode) {
 
 /* ------------------------------------------------------------- rendering */
 
-function includedTrials(): TrialAnalysis[] {
-  return trials.filter((_, i) => !excluded.has(i));
+function includedResponses(): StepResponseAnalysis[] {
+  return responses.filter((_, i) => !excluded.has(i));
 }
 
 /**
  * Fit error as a percentage of the step that provoked it.
  *
- * Raw pixels are not comparable between trials: the step size is drawn from
+ * Raw pixels are not comparable between step responses: the step size is drawn from
  * LOGICAL_HEIGHT/15 .. LOGICAL_HEIGHT/5, a 3x range, so the same pixel error
  * is a good fit on a big step and a bad one on a small step. On the reference
- * recording trial 3 (9.1 px on a 39 px step) reads as better than trial 2
+ * recording step response 3 (9.1 px on a 39 px step) reads as better than step response 2
  * (11.0 px on 77 px) in pixels and far worse -- 23% against 14% -- once the
- * step is accounted for. A trial with no step to speak of has no scale to be
+ * step is accounted for. A step response with no step to speak of has no scale to be
  * judged against at all.
  */
-function errorPctOf(t: TrialAnalysis): number {
+function errorPctOf(t: StepResponseAnalysis): number {
   return t.stepSize > 0 ? (t.fit2Rms / t.stepSize) * 100 : Infinity;
 }
 
@@ -700,7 +699,7 @@ interface OutlierBounds {
   high: number;
   /**
    * Fit far BETTER than its peers, which is just as suspect: a human tracking
-   * a step does not produce a 0.3% fit. It means the trial holds almost no
+   * a step does not produce a 0.3% fit. It means the step response holds almost no
    * dynamics for the model to get wrong, so it contributes a confident number
    * about nothing. The reference recording has exactly one, 40x below the rest.
    */
@@ -708,13 +707,13 @@ interface OutlierBounds {
 }
 
 function outlierBounds(): OutlierBounds {
-  if (trials.length === 0) return { high: Infinity, low: 0 };
-  const sorted = trials.map(errorPctOf).sort((a, b) => a - b);
+  if (responses.length === 0) return { high: Infinity, low: 0 };
+  const sorted = responses.map(errorPctOf).sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
   return { high: median * 3, low: median / 3 };
 }
 
-function outlierKindOf(t: TrialAnalysis, bounds: OutlierBounds): 'poor' | 'degenerate' | null {
+function outlierKindOf(t: StepResponseAnalysis, bounds: OutlierBounds): 'poor' | 'degenerate' | null {
   const pct = errorPctOf(t);
   if (pct > bounds.high) return 'poor';
   if (pct < bounds.low) return 'degenerate';
@@ -728,9 +727,9 @@ function renderResults() {
 }
 
 function pushModelToSimulation() {
-  const included = includedTrials();
+  const included = includedResponses();
   if (included.length === 0) return;
-  const agg = aggregateTrials(included, analysisSamplePeriodMs);
+  const agg = aggregateResponses(included, analysisSamplePeriodMs);
   const source = SIM_SOURCE === 'median' ? agg.medianContinuous : agg.averageContinuous;
   experiment.setSimulationModel({
     P11: source.P11,
@@ -753,32 +752,32 @@ function tile(label: string, value: string, unit: string, note: string) {
 function renderReadout() {
   // A model run must never be presented as yours: the heading names whose
   // system this is, taken from the data on screen rather than the setting.
-  const byModel = analysisSource !== 'none' && trials.length > 0;
+  const byModel = analysisSource !== 'none' && responses.length > 0;
   readoutHeading.textContent = byModel
     ? `${modelName(analysisSource).replace(/^./, (c) => c.toUpperCase())} · self-test`
     : 'Your model';
   readoutHeading.parentElement!.parentElement!.dataset.source = byModel ? 'model' : 'you';
 
-  const included = includedTrials();
+  const included = includedResponses();
   if (included.length === 0) {
-    readoutSource.textContent = trials.length === 0 ? '' : 'All trials excluded';
+    readoutSource.textContent = responses.length === 0 ? '' : 'All step responses excluded';
     readoutEl.innerHTML =
-      trials.length === 0
-        ? '<p class="empty">Record a few steps and your identified model appears here, updating as each trial completes.</p>'
-        : '<p class="empty">Tick at least one trial to identify a model.</p>';
+      responses.length === 0
+        ? '<p class="empty">Record a few step responses and your identified model appears here, updating as each step interval completes.</p>'
+        : '<p class="empty">Tick at least one step response to identify a model.</p>';
     return;
   }
 
-  const agg = aggregateTrials(included, analysisSamplePeriodMs);
+  const agg = aggregateResponses(included, analysisSamplePeriodMs);
   const c = SIM_SOURCE === 'median' ? agg.medianContinuous : agg.averageContinuous;
   const d = SIM_SOURCE === 'median' ? agg.medianDiscrete : agg.averageDiscrete;
   const { wn, zeta, overshoot } = dampingMetrics(c);
   const character = dampingCharacter(zeta);
   const tau = c.P11 === 0 ? Infinity : -1 / c.P11;
 
-  const excludedCount = trials.length - included.length;
+  const excludedCount = responses.length - included.length;
   readoutSource.textContent =
-    `${SIM_SOURCE === 'median' ? 'Median' : 'Average'} of ${included.length} trial${included.length === 1 ? '' : 's'}` +
+    `${SIM_SOURCE === 'median' ? 'Median' : 'Average'} of ${included.length} step response${included.length === 1 ? '' : 's'}` +
     (excludedCount > 0 ? ` · ${excludedCount} excluded` : '');
 
   // The lede is what the numbers MEAN about the person. 2% settling time of a
@@ -838,17 +837,17 @@ function renderReadout() {
     `<p class="details-line">Best first-order fit: τ = ${tau.toFixed(3)} s, delay ${(c.D1 * 1000).toFixed(0)} ms</p>`;
 
   const bounds = outlierBounds();
-  const poor = trials.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'poor').length;
-  const degenerate = trials.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'degenerate').length;
+  const poor = responses.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'poor').length;
+  const degenerate = responses.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'degenerate').length;
   const notes: string[] = [];
-  const trialsFit = (n: number) => `${n} trial${n === 1 ? ' fits' : 's fit'}`;
-  if (poor > 0) notes.push(`${trialsFit(poor)} more than 3× worse than the median`);
-  if (degenerate > 0) notes.push(`${trialsFit(degenerate)} more than 3× better than the median, likely too little movement to measure`);
+  const responsesFit = (n: number) => `${n} step response${n === 1 ? ' fits' : 's fit'}`;
+  if (poor > 0) notes.push(`${responsesFit(poor)} more than 3× worse than the median`);
+  if (degenerate > 0) notes.push(`${responsesFit(degenerate)} more than 3× better than the median, likely too little movement to measure`);
   const flagged = poor + degenerate;
   const flag =
     notes.length > 0
       ? `<p class="flag">Relative to step size, ${notes.join('; ')}. ` +
-        `${flagged === 1 ? "It's" : "They're"} marked ⚠ in Trials; untick ${flagged === 1 ? 'it' : 'one'} to see how much it moves the model.</p>`
+        `${flagged === 1 ? "It's" : "They're"} marked ⚠ in Session; untick ${flagged === 1 ? 'it' : 'one'} to see how much it moves the model.</p>`
       : '';
 
   readoutEl.innerHTML =
@@ -856,80 +855,80 @@ function renderReadout() {
     `<div class="readout-text">${verdict}${continuous}${discrete}${details}${flag}</div></div>`;
 }
 
-/** Trial i's lead-in: the samples just before its step. */
+/** Step response i's lead-in: the samples just before its step. */
 function leadOf(i: number) {
   return leadIns[i];
 }
 
-const trialCountNote = $<HTMLParagraphElement>('trialCountNote');
-const trialDetail = $<HTMLDivElement>('trialDetail');
+const responseCountNote = $<HTMLParagraphElement>('responseCountNote');
+const responseDetail = $<HTMLDivElement>('responseDetail');
 
 /**
  * The count lives in the details note rather than a label of its own: the
  * strip scrolls sideways, so on a narrow screen it is the only way to know how
- * many trials there are.
+ * many step responses there are.
  */
-function renderTrialCount() {
-  const n = trials.length;
-  trialCountNote.textContent =
-    n === 0 ? '' : n === 1 ? '1 trial' : `${n} trials, ${touchFirst ? 'tap' : 'select'} one to see details`;
+function renderResponseCount() {
+  const n = responses.length;
+  responseCountNote.textContent =
+    n === 0 ? '' : n === 1 ? '1 step response' : `${n} step responses, ${touchFirst ? 'tap' : 'select'} one to see details`;
   // Nothing to untick or inspect yet.
-  trialCountNote.parentElement!.hidden = trialDetail.hidden = n === 0;
+  responseCountNote.parentElement!.hidden = responseDetail.hidden = n === 0;
 }
 
 function renderFilmstrip() {
-  renderTrialCount();
-  if (trials.length === 0) {
-    filmstripEl.innerHTML = '<p class="empty">Trials appear here as you record, one per step.</p>';
+  renderResponseCount();
+  if (responses.length === 0) {
+    filmstripEl.innerHTML = '<p class="empty">Step responses appear here as you record, one per step.</p>';
     return;
   }
 
   const bounds = outlierBounds();
 
-  // A rebuild still happens when trials arrive mid-run, and it can land while
+  // A rebuild still happens when step responses arrive mid-run, and it can land while
   // someone is working through the strip, so put focus back where it was.
   const focused = document.activeElement as HTMLElement | null;
-  const focusedCard = focused?.closest('.trial-card');
+  const focusedCard = focused?.closest('.response-card');
   const focusedIndex = focusedCard ? [...filmstripEl.children].indexOf(focusedCard) : -1;
-  const focusedWasCheckbox = focused?.classList.contains('trial-include') ?? false;
+  const focusedWasCheckbox = focused?.classList.contains('response-include') ?? false;
 
   filmstripEl.innerHTML = '';
 
-  trials.forEach((t, i) => {
+  responses.forEach((t, i) => {
     const { zeta } = dampingMetrics(t.continuous);
     const kind = outlierKindOf(t, bounds);
     const pct = errorPctOf(t);
 
-    // The card holds two SIBLING controls: a checkbox that includes the trial
+    // The card holds two SIBLING controls: a checkbox that includes the step response
     // in the model, and a button that inspects it. They used to be one button
     // with the checkbox nested inside, which is invalid -- a button may not
     // contain interactive content -- and left the two fighting over clicks
     // and tab order.
     const card = document.createElement('div');
-    card.className = 'trial-card';
+    card.className = 'response-card';
     card.dataset.excluded = String(excluded.has(i));
     card.dataset.outlier = kind ?? '';
 
     const inspect = document.createElement('button');
     inspect.type = 'button';
-    inspect.className = 'trial-inspect';
+    inspect.className = 'response-inspect';
     inspect.setAttribute('aria-pressed', String(i === inspected));
     inspect.innerHTML =
-      `<span class="name">Trial ${i + 1}${kind ? ' ⚠' : ''}</span>` +
+      `<span class="name">Step ${i + 1}${kind ? ' ⚠' : ''}</span>` +
       `<canvas></canvas>` +
-      `<span class="trial-stats"><span>ζ ${zeta.toFixed(2)}</span>` +
+      `<span class="response-stats"><span>ζ ${zeta.toFixed(2)}</span>` +
       `<span>${Number.isFinite(pct) ? `${pct < 10 ? pct.toFixed(1) : pct.toFixed(0)}% err` : '—'}</span></span>`;
     inspect.title =
       `RMS ${t.fit2Rms.toFixed(1)} px on a ${t.stepSize.toFixed(0)} px step` +
-      (kind === 'poor' ? ' — fits far worse than the other trials' : '') +
+      (kind === 'poor' ? ' — fits far worse than the other step responses' : '') +
       (kind === 'degenerate' ? ' — fits far better than is plausible; little to measure here' : '');
     // Update in place rather than rebuilding the strip. A rebuild replaces the
     // very node being operated, which drops keyboard focus to the body -- so
-    // excluding three trials in a row meant tabbing back in three times.
+    // excluding three step responses in a row meant tabbing back in three times.
     inspect.addEventListener('click', () => {
       inspected = i;
-      followLatest = i === trials.length - 1;
-      for (const other of filmstripEl.querySelectorAll('.trial-inspect')) {
+      followLatest = i === responses.length - 1;
+      for (const other of filmstripEl.querySelectorAll('.response-inspect')) {
         other.setAttribute('aria-pressed', String(other === inspect));
       }
       renderPlots();
@@ -937,14 +936,14 @@ function renderFilmstrip() {
 
     const box = document.createElement('input');
     box.type = 'checkbox';
-    box.className = 'trial-include';
+    box.className = 'response-include';
     box.checked = !excluded.has(i);
-    box.setAttribute('aria-label', `Include trial ${i + 1} in the model`);
+    box.setAttribute('aria-label', `Include step ${i + 1} in the model`);
     box.addEventListener('change', () => {
       if (box.checked) excluded.delete(i);
       else excluded.add(i);
       // Only this card's dimming and the summary above change: the outlier
-      // marks come from outlierBounds(), which reads every trial regardless of
+      // marks come from outlierBounds(), which reads every step response regardless of
       // what is excluded. So no rebuild, and focus stays on the checkbox.
       card.dataset.excluded = String(excluded.has(i));
       pushModelToSimulation();
@@ -954,50 +953,50 @@ function renderFilmstrip() {
 
     card.append(inspect, box);
     filmstripEl.appendChild(card);
-    plotTrialSparkline(inspect.querySelector('canvas') as HTMLCanvasElement, t.trial.xn, t.trial.yn, leadOf(i));
+    plotResponseSparkline(inspect.querySelector('canvas') as HTMLCanvasElement, t.response.xn, t.response.yn, leadOf(i));
   });
 
   if (focusedIndex >= 0) {
     const card = filmstripEl.children[focusedIndex] as HTMLElement | undefined;
-    const target = card?.querySelector<HTMLElement>(focusedWasCheckbox ? '.trial-include' : '.trial-inspect');
+    const target = card?.querySelector<HTMLElement>(focusedWasCheckbox ? '.response-include' : '.response-inspect');
     target?.focus();
   }
 }
 
-/** The trial the detail plots currently show, so they are not redrawn for nothing. */
-let plottedTrial: TrialAnalysis | null = null;
+/** The step response the detail plots currently show, so they are not redrawn for nothing. */
+let plottedResponse: StepResponseAnalysis | null = null;
 
 /**
- * @param force redraw even if the same trial is already plotted -- needed
+ * @param force redraw even if the same step response is already plotted -- needed
  *              after a theme change, which the canvases cannot inherit.
  */
 function renderPlots(force = false) {
-  const t = trials[inspected];
+  const t = responses[inspected];
   if (!t) {
     // Canvases keep their last drawing, so returning early here is what left
-    // a previous run's plots on screen under a "Trial Details" heading after
-    // a run that produced no trials at all.
-    trialDetailHeading.textContent = 'Trial details';
-    if (plottedTrial) {
+    // a previous run's plots on screen under a "Step details" heading after
+    // a run that produced no step responses at all.
+    responseDetailHeading.textContent = 'Step details';
+    if (plottedResponse) {
       clearPlot(stepGraph);
       clearPlot(freqGraph);
       clearPlot(poleGraph);
-      plottedTrial = null;
+      plottedResponse = null;
     }
     poleReadout.textContent = '';
     poleResetBtn.hidden = true;
     detailLegend.hidden = true;
     return;
   }
-  if (t === plottedTrial && !force) return;
-  // A different trial starts from its own fit: a pole dragged on one trial
+  if (t === plottedResponse && !force) return;
+  // A different step response starts from its own fit: a pole dragged on one step response
   // means nothing for the next.
-  if (t !== plottedTrial) dragged = null;
-  plottedTrial = t;
-  trialDetailHeading.textContent = `Trial ${inspected + 1} details`;
+  if (t !== plottedResponse) dragged = null;
+  plottedResponse = t;
+  responseDetailHeading.textContent = `Step ${inspected + 1} details`;
 
-  // Measured response: |H[k]| of the DFT of this trial's deconvolved h[n].
-  // Computed once per trial -- a drag redraws many times a second and only
+  // Measured response: |H[k]| of the DFT of this step response's deconvolved h[n].
+  // Computed once per step response -- a drag redraws many times a second and only
   // the model curves move.
   const Hk = dft(t.hn);
   const n = Hk.real.length;
@@ -1008,14 +1007,14 @@ function renderPlots(force = false) {
 
 /**
  * The pole pair being shown, when it has been dragged off the fit. Exploration
- * only: it redraws this trial's plots and never touches the identified model.
+ * only: it redraws this step response's plots and never touches the identified model.
  */
 let dragged: { p1: number; p2: number } | null = null;
 let plottedSpectrum = new Float64Array();
 
-/** Redraws the inspected trial's three plots for the current pole pair. */
+/** Redraws the inspected step response's three plots for the current pole pair. */
 function drawDetail() {
-  const t = plottedTrial;
+  const t = plottedResponse;
   if (!t) return;
   const fit = { p1: t.discrete.P21, p2: t.discrete.P22 };
   const pole = dragged ?? fit;
@@ -1029,10 +1028,10 @@ function drawDetail() {
   });
   plotPoleLocations(poleGraph, [pole], dragged ? fit : undefined);
 
-  const model = simulateSecondOrder(t.trial.xn, pole.p1, pole.p2, D);
+  const model = simulateSecondOrder(t.response.xn, pole.p1, pole.p2, D);
   // Led in from just before the step, as the thumbnails are, so the plot
   // shows the step and not just its aftermath. Before the step the models
-  // sit at rest on the old target level, which is 0 in the trial's frame.
+  // sit at rest on the old target level, which is 0 in the step response's frame.
   const lead = leadOf(inspected);
   const k = lead ? lead.xn.length : 0;
   const withLead = (head: Float64Array | null, body: Float64Array) => {
@@ -1042,10 +1041,10 @@ function drawDetail() {
     return out;
   };
   plotStepResponse(stepGraph, {
-    target: withLead(lead?.xn ?? null, t.trial.xn),
-    measured: withLead(lead?.yn ?? null, t.trial.yn),
+    target: withLead(lead?.xn ?? null, t.response.xn),
+    measured: withLead(lead?.yn ?? null, t.response.yn),
     model: withLead(null, model),
-    fit: dragged ? withLead(null, simulateSecondOrder(t.trial.xn, fit.p1, fit.p2, D)) : undefined,
+    fit: dragged ? withLead(null, simulateSecondOrder(t.response.xn, fit.p1, fit.p2, D)) : undefined,
     samplePeriodMs: analysisSamplePeriodMs,
     stepIndex: k,
   });
@@ -1055,7 +1054,7 @@ function drawDetail() {
   const c = discretePairToContinuous(pole.p1, pole.p2, analysisSamplePeriodMs / 1000);
   const { wn, zeta, overshoot } = dampingMetrics({ P11: 0, D1: 0, P21: c.cr, P22: c.ci, D2: 0 });
   let sq = 0;
-  for (let i = 0; i < model.length; i++) sq += (t.trial.yn[i] - model[i]) ** 2;
+  for (let i = 0; i < model.length; i++) sq += (t.response.yn[i] - model[i]) ** 2;
   const errPct = t.stepSize > 0 ? (Math.sqrt(sq / model.length) / t.stepSize) * 100 : NaN;
   const errText = Number.isFinite(errPct) ? `${errPct < 10 ? errPct.toFixed(1) : errPct.toFixed(0)}% err` : '';
   poleReadout.textContent =
@@ -1123,10 +1122,10 @@ function poleAt(e: PointerEvent) {
 // ON the axis when the pair is already real grabs the nearer real pole
 // instead, and splits the pair.
 poleGraph.addEventListener('pointerdown', (e) => {
-  if (!plottedTrial) return;
+  if (!plottedResponse) return;
   poleGraph.setPointerCapture(e.pointerId);
   poleGraph.dataset.dragging = 'true';
-  const current = dragged ?? { p1: plottedTrial.discrete.P21, p2: plottedTrial.discrete.P22 };
+  const current = dragged ?? { p1: plottedResponse.discrete.P21, p2: plottedResponse.discrete.P22 };
   const z = zAt(e);
   if (z.onAxis && current.p2 <= 0) {
     const hi = current.p1 - current.p2;
@@ -1147,7 +1146,7 @@ for (const type of ['pointerup', 'pointercancel'] as const) {
   poleGraph.addEventListener(type, () => (poleGraph.dataset.dragging = 'false'));
 }
 poleGraph.addEventListener('keydown', (e) => {
-  if (!plottedTrial) return;
+  if (!plottedResponse) return;
   if (e.key === 'Escape') {
     if (!dragged) return;
     dragged = null;
@@ -1167,7 +1166,7 @@ poleGraph.addEventListener('keydown', (e) => {
   // Arrow keys would otherwise scroll the card, and the space bar is left
   // alone for starting and stopping runs.
   e.preventDefault();
-  const from = dragged ?? { p1: plottedTrial.discrete.P21, p2: plottedTrial.discrete.P22 };
+  const from = dragged ?? { p1: plottedResponse.discrete.P21, p2: plottedResponse.discrete.P22 };
   dragged = clampPole(from.p1 + move[0], from.p2 + move[1]);
   drawDetail();
 });
@@ -1207,7 +1206,7 @@ interface SamplesView {
 }
 let samplesShown: SamplesView | null = null;
 
-/** Opens one recording's samples, over the Recordings list. */
+/** Opens one session's samples, over the Sessions list. */
 function openSamples(view: SamplesView) {
   samplesShown = view;
   samplesTitle.textContent = `Samples · ${view.name}`;
@@ -1219,7 +1218,7 @@ function openSamples(view: SamplesView) {
   }
   samplesOut.value = lines.join('\n');
   samplesDialog.showModal();
-  // Replacing the text keeps the old scroll position; a new recording starts at n = 0.
+  // Replacing the text keeps the old scroll position; a new session starts at n = 0.
   samplesOut.scrollTop = 0;
 }
 
@@ -1273,9 +1272,9 @@ replayBtn.addEventListener('click', () => {
 });
 
 settingsBtn.addEventListener('click', () => settingsDialog.showModal());
-dataBtn.addEventListener('click', () => {
-  void renderLibrary();
-  dataDialog.showModal();
+sessionsBtn.addEventListener('click', () => {
+  void renderSessions();
+  sessionsDialog.showModal();
 });
 
 /**
@@ -1294,7 +1293,7 @@ function closeOnBackdropClick(dialog: HTMLDialogElement) {
 }
 
 closeOnBackdropClick(settingsDialog);
-closeOnBackdropClick(dataDialog);
+closeOnBackdropClick(sessionsDialog);
 closeOnBackdropClick(samplesDialog);
 
 document.addEventListener('keydown', (e) => {
@@ -1303,7 +1302,7 @@ document.addEventListener('keydown', (e) => {
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
   if (el instanceof HTMLButtonElement || el instanceof HTMLDetailsElement) return;
   // Space must not start a run behind an open modal.
-  if (settingsDialog.open || dataDialog.open || samplesDialog.open) return;
+  if (settingsDialog.open || sessionsDialog.open || samplesDialog.open) return;
   e.preventDefault();
   // The space bar is an explicit instruction, unlike a press on the plot, so
   // it stops straight away instead of asking.
@@ -1318,12 +1317,12 @@ paceGroup.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button[data-pace]') as HTMLButtonElement | null;
   if (!btn) return;
   for (const b of paceGroup.querySelectorAll('button')) b.setAttribute('aria-checked', String(b === btn));
-  trialPeriodInput.value = btn.dataset.pace!;
+  stepPeriodInput.value = btn.dataset.pace!;
   experiment.updateConfig(currentConfig());
   saveSettings();
 });
 
-[trialPeriodInput, samplePeriodInput, simulationModeSelect, discretePointsCheckbox].forEach((el) =>
+[stepPeriodInput, samplePeriodInput, simulationModeSelect, discretePointsCheckbox].forEach((el) =>
   el.addEventListener('change', () => {
     experiment.updateConfig(currentConfig());
     syncPaceButtons();
@@ -1333,7 +1332,7 @@ paceGroup.addEventListener('click', (e) => {
 );
 
 function syncPaceButtons() {
-  const ms = String(currentConfig().trialPeriodMs);
+  const ms = String(currentConfig().stepPeriodMs);
   for (const b of paceGroup.querySelectorAll('button')) {
     b.setAttribute('aria-checked', String(b.getAttribute('data-pace') === ms));
   }
@@ -1348,7 +1347,7 @@ function repaintForTheme() {
 }
 
 resetSettingsBtn.addEventListener('click', () => {
-  trialPeriodInput.value = String(DEFAULT_SETTINGS.trialPeriodMs);
+  stepPeriodInput.value = String(DEFAULT_SETTINGS.stepPeriodMs);
   samplePeriodInput.value = String(DEFAULT_SETTINGS.samplePeriodMs);
   simulationModeSelect.value = DEFAULT_SETTINGS.simulationMode;
   discretePointsCheckbox.checked = DEFAULT_SETTINGS.discretePoints;
@@ -1407,7 +1406,7 @@ fileInput.addEventListener('change', async () => {
   // samples and file them under the imported name.
   if (experiment.isActive()) {
     fileInput.value = '';
-    statusEl.textContent = 'Stop the run before importing a recording';
+    statusEl.textContent = 'Stop the run before importing a session';
     return;
   }
   const text = await file.text();
@@ -1415,7 +1414,7 @@ fileInput.addEventListener('change', async () => {
   fileInput.value = '';
   let parsed: { xs: Float64Array; ys: Float64Array };
   try {
-    parsed = parseRecording(text);
+    parsed = parseSessionFile(text);
   } catch (err) {
     statusEl.textContent = (err as Error).message;
     return;
@@ -1423,40 +1422,40 @@ fileInput.addEventListener('change', async () => {
   const { xs, ys } = parsed;
   const existing = await safely(() => findByHash(hashSamples(xs, ys)));
   if (existing) {
-    showRecording(existing, `Loaded ${xs.length} samples from ${file.name} · already in your recordings`);
-    if (dataDialog.open) void renderLibrary();
+    showSession(existing, `Loaded ${xs.length} samples from ${file.name} · already in your sessions`);
+    if (sessionsDialog.open) void renderSessions();
   } else {
     showSamples(xs, ys, currentConfig().samplePeriodMs, 'none', []);
     statusEl.textContent = `Loaded ${xs.length} samples from ${file.name}`;
     // Re-renders the list itself once the new row exists.
-    await keepRecording(xs, ys, 'none', analysisSamplePeriodMs, file.name);
+    await keepSession(xs, ys, 'none', analysisSamplePeriodMs, file.name);
   }
 });
 
-/* ----------------------------------------------------- recording library */
+/* --------------------------------------------------------------- sessions */
 
-/** Runs a library call, and on failure says so once instead of breaking the app. */
+/** Runs a session-store call, and on failure says so once instead of breaking the app. */
 async function safely<T>(run: () => Promise<T>): Promise<T | undefined> {
   try {
     return await run();
   } catch {
-    libraryUnavailable.hidden = false;
+    sessionsUnavailable.hidden = false;
     return undefined;
   }
 }
 
 /** What a list row shows, from the analysis on screen. */
-function summarize(): RecordingSummary {
-  const included = includedTrials();
-  if (included.length === 0) return { trials: trials.length, included: 0, zeta: NaN, wn: NaN, delayMs: NaN };
-  const agg = aggregateTrials(included, analysisSamplePeriodMs);
+function summarize(): SessionSummary {
+  const included = includedResponses();
+  if (included.length === 0) return { responses: responses.length, included: 0, zeta: NaN, wn: NaN, delayMs: NaN };
+  const agg = aggregateResponses(included, analysisSamplePeriodMs);
   const c = SIM_SOURCE === 'median' ? agg.medianContinuous : agg.averageContinuous;
   const { wn, zeta } = dampingMetrics(c);
-  return { trials: trials.length, included: included.length, zeta, wn, delayMs: c.D2 * 1000 };
+  return { responses: responses.length, included: included.length, zeta, wn, delayMs: c.D2 * 1000 };
 }
 
-/** Stores the analysis on screen as a new recording and makes it the open one. */
-async function keepRecording(
+/** Stores the analysis on screen as a new session and makes it the open one. */
+async function keepSession(
   xs: Float64Array,
   ys: Float64Array,
   source: SimulationMode,
@@ -1465,7 +1464,7 @@ async function keepRecording(
 ) {
   const createdAt = Date.now();
   const id = await safely(() =>
-    addRecording({
+    addSession({
       createdAt,
       source,
       fileName,
@@ -1479,18 +1478,16 @@ async function keepRecording(
     }),
   );
   if (id === undefined) return;
-  currentRecordingId = id;
+  currentSessionId = id;
   rememberOpen(id);
-  setRecordingName(recordingName({ note: '', fileName, createdAt }));
-  // Kept now, so the guide can say the run will still be there after the next.
-  renderGuide(experiment.getPhase());
-  if (dataDialog.open) void renderLibrary();
+  setSessionName(sessionName({ note: '', fileName, createdAt }));
+  if (sessionsDialog.open) void renderSessions();
 }
 
-/** Saves the unticked trials, and the summary they change, to the open recording. */
+/** Saves the unticked step responses, and the summary they change, to the open session. */
 function persistAnalysis() {
-  if (currentRecordingId === null) return;
-  void safely(() => updateRecording(currentRecordingId!, { excluded: [...excluded], summary: summarize() }));
+  if (currentSessionId === null) return;
+  void safely(() => updateSession(currentSessionId!, { excluded: [...excluded], summary: summarize() }));
 }
 
 /** Puts samples on screen and identifies them, as an import or an opened recording. */
@@ -1498,7 +1495,7 @@ function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number,
   dismissFlash();
   lastSamples = { xs, ys, samplePeriodMs };
   clearAnalysis(samplePeriodMs, source);
-  // After clearAnalysis, which empties it, and before the trials are drawn.
+  // After clearAnalysis, which empties it, and before the step responses are drawn.
   for (const i of exclude) excluded.add(i);
   plotSource = source;
   syncLegend();
@@ -1507,12 +1504,11 @@ function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number,
   renderGuide(experiment.getPhase());
 }
 
-function showRecording(rec: Recording, status: string) {
-  showSamples(rec.xs, rec.ys, rec.samplePeriodMs, rec.source, rec.excluded);
-  currentRecordingId = rec.id;
-  rememberOpen(rec.id);
-  setRecordingName(recordingName(rec));
-  renderGuide(experiment.getPhase());
+function showSession(session: Session, status: string) {
+  showSamples(session.xs, session.ys, session.samplePeriodMs, session.source, session.excluded);
+  currentSessionId = session.id;
+  rememberOpen(session.id);
+  setSessionName(sessionName(session));
   statusEl.textContent = status;
 }
 
@@ -1533,19 +1529,21 @@ function whenLabel(t: number): string {
   return `${d.toLocaleDateString(undefined, opts)} · ${time}`;
 }
 
-function whoLabel(rec: Recording): string {
-  if (rec.fileName) return rec.fileName;
-  return rec.source === 'none' ? 'You' : `${modelName(rec.source).replace(/^./, (c) => c.toUpperCase())} · self-test`;
+function whoLabel(session: Session): string {
+  if (session.fileName) return session.fileName;
+  return session.source === 'none' ? 'You' : `${modelName(session.source).replace(/^./, (c) => c.toUpperCase())} · self-test`;
 }
 
-function statsLabel(s: RecordingSummary | null): string {
+function statsLabel(s: SessionSummary | null): string {
   if (!s) return '';
-  const count = trialCount(s.trials);
+  // Old saves counted them under `trials`.
+  const n = s.responses ?? (s as { trials?: number }).trials ?? 0;
+  const count = `${n} step${n === 1 ? '' : 's'}`;
   if (s.included === 0) return `${count} · all excluded`;
   return `${count} · ζ ${s.zeta.toFixed(2)} · ${s.delayMs.toFixed(0)} ms delay`;
 }
 
-/** A small button for a library row. */
+/** A small button for a row in the Sessions list. */
 function rowButton(cls: string, text: string, label: string, onClick: () => void) {
   const b = document.createElement('button');
   b.type = 'button';
@@ -1557,55 +1555,55 @@ function rowButton(cls: string, text: string, label: string, onClick: () => void
 }
 
 /**
- * The run on screen when nothing stores it -- the library is unavailable, or
- * its recording was deleted -- so its samples can still be read and exported.
+ * The run on screen when nothing stores it -- the session store is unavailable, or
+ * its session was deleted -- so its samples can still be read and exported.
  */
 function unsavedRow(): HTMLLIElement | null {
-  if (!lastSamples || currentRecordingId !== null || experiment.isActive()) return null;
+  if (!lastSamples || currentSessionId !== null || experiment.isActive()) return null;
   const shown = lastSamples;
   const li = document.createElement('li');
-  li.className = 'rec';
+  li.className = 'session-row';
   li.dataset.unsaved = 'true';
   li.setAttribute('aria-current', 'true');
   const info = document.createElement('div');
-  info.className = 'rec-open';
+  info.className = 'session-open';
   for (const [cls, text] of [
-    ['rec-when', 'On screen · not kept'],
-    ['rec-who', plotSource === 'none' ? 'You' : `${modelName(plotSource)} · self-test`],
-    ['rec-stats', statsLabel(summarize())],
+    ['session-when', 'On screen · not kept'],
+    ['session-who', plotSource === 'none' ? 'You' : `${modelName(plotSource)} · self-test`],
+    ['session-stats', statsLabel(summarize())],
   ]) {
     const span = document.createElement('span');
     span.className = cls;
     span.textContent = text;
     info.appendChild(span);
   }
-  const data = rowButton('rec-data', 'Data', 'Samples of the run on screen', () =>
-    openSamples({ ...shown, name: 'the run on screen', createdAt: Date.now() }),
+  const data = rowButton('session-data', 'Data', 'Samples of the session on screen', () =>
+    openSamples({ ...shown, name: 'the session on screen', createdAt: Date.now() }),
   );
   li.append(info, data);
   return li;
 }
 
-async function renderLibrary() {
-  const all = await safely(listRecordings);
-  libraryList.innerHTML = '';
+async function renderSessions() {
+  const all = await safely(listSessions);
+  sessionList.innerHTML = '';
   const unsaved = unsavedRow();
-  if (unsaved) libraryList.appendChild(unsaved);
-  libraryEmpty.hidden = !!unsaved || (all?.length ?? 0) > 0;
+  if (unsaved) sessionList.appendChild(unsaved);
+  sessionsEmpty.hidden = !!unsaved || (all?.length ?? 0) > 0;
   if (!all) return;
-  for (const rec of all) {
+  for (const session of all) {
     const li = document.createElement('li');
-    li.className = 'rec';
-    li.setAttribute('aria-current', String(rec.id === currentRecordingId));
+    li.className = 'session-row';
+    li.setAttribute('aria-current', String(session.id === currentSessionId));
 
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
-    openBtn.className = 'rec-open';
-    openBtn.title = 'Open this recording';
+    openBtn.className = 'session-open';
+    openBtn.title = 'Open this session';
     for (const [cls, text] of [
-      ['rec-when', whenLabel(rec.createdAt)],
-      ['rec-who', whoLabel(rec)],
-      ['rec-stats', statsLabel(rec.summary)],
+      ['session-when', whenLabel(session.createdAt)],
+      ['session-who', whoLabel(session)],
+      ['session-stats', statsLabel(session.summary)],
     ]) {
       const span = document.createElement('span');
       span.className = cls;
@@ -1614,28 +1612,28 @@ async function renderLibrary() {
     }
     openBtn.addEventListener('click', () => {
       if (experiment.isActive()) return;
-      showRecording(rec, `Opened the recording from ${whenLabel(rec.createdAt)}`);
+      showSession(session, `Opened the session from ${whenLabel(session.createdAt)}`);
       // The dialog stays open, so recordings can be stepped through; only the
       // selection moves. The run that was on screen unsaved is gone now.
-      for (const row of libraryList.children) {
+      for (const row of sessionList.children) {
         row.setAttribute('aria-current', String(row === li));
       }
-      libraryList.querySelector('[data-unsaved]')?.remove();
+      sessionList.querySelector('[data-unsaved]')?.remove();
     });
 
     // Saved as you type, a moment after you stop; no Save button to forget.
     const note = document.createElement('input');
     note.type = 'text';
-    note.className = 'rec-note';
-    note.value = rec.note;
+    note.className = 'session-note';
+    note.value = session.note;
     note.placeholder = 'Add a note: mouse, trackpad, tired…';
-    note.setAttribute('aria-label', `Note for the recording from ${whenLabel(rec.createdAt)}`);
+    note.setAttribute('aria-label', `Note for the session from ${whenLabel(session.createdAt)}`);
     let noteTimer: ReturnType<typeof setTimeout> | undefined;
     const saveNote = () => {
       clearTimeout(noteTimer);
-      rec.note = note.value;
-      if (rec.id === currentRecordingId) setRecordingName(recordingName(rec));
-      void safely(() => updateRecording(rec.id, { note: note.value }));
+      session.note = note.value;
+      if (session.id === currentSessionId) setSessionName(sessionName(session));
+      void safely(() => updateSession(session.id, { note: note.value }));
     };
     note.addEventListener('input', () => {
       clearTimeout(noteTimer);
@@ -1655,50 +1653,49 @@ async function renderLibrary() {
     // undone, and a list of similar rows is an easy place to misclick.
     const del = document.createElement('button');
     del.type = 'button';
-    del.className = 'rec-delete ghost';
+    del.className = 'session-delete ghost';
     del.textContent = 'Delete';
-    del.setAttribute('aria-label', `Delete the recording from ${whenLabel(rec.createdAt)}`);
+    del.setAttribute('aria-label', `Delete the session from ${whenLabel(session.createdAt)}`);
     del.addEventListener('click', async () => {
       if (del.dataset.confirm !== 'true') {
         del.dataset.confirm = 'true';
         del.textContent = 'Delete?';
         return;
       }
-      await safely(() => deleteRecording(rec.id));
+      await safely(() => deleteSession(session.id));
       // The run stays on screen; it is just no longer kept.
-      if (rec.id === currentRecordingId) {
-        currentRecordingId = null;
+      if (session.id === currentSessionId) {
+        currentSessionId = null;
         rememberOpen(null);
-        setRecordingName('');
-        renderGuide(experiment.getPhase());
+        setSessionName('');
       }
-      void renderLibrary();
+      void renderSessions();
     });
     del.addEventListener('blur', () => {
       del.dataset.confirm = 'false';
       del.textContent = 'Delete';
     });
 
-    const data = rowButton('rec-data', 'Data', `Samples of the recording from ${whenLabel(rec.createdAt)}`, () =>
-      openSamples({ ...rec, name: recordingName(rec) }),
+    const data = rowButton('session-data', 'Data', `Samples of the session from ${whenLabel(session.createdAt)}`, () =>
+      openSamples({ ...session, name: sessionName(session) }),
     );
 
     li.append(openBtn, data, del, note);
-    libraryList.appendChild(li);
+    sessionList.appendChild(li);
   }
 }
 
 /**
- * Reopens the recording that was open when the page was last left, so a
+ * Reopens the session that was open when the page was last left, so a
  * reload picks up where you were. If that one has since been deleted, the
  * newest is the best guess.
  */
 async function restoreLatest() {
   const id = rememberedOpen();
-  const rec = (id !== null ? await safely(() => getRecording(id)) : undefined) ?? (await safely(listRecordings))?.[0];
-  // A run or an import may have started while the library was being read.
-  if (!rec || lastSamples || experiment.isActive()) return;
-  showRecording(rec, `Reopened ${recordingName(rec)}`);
+  const session = (id !== null ? await safely(() => getSession(id)) : undefined) ?? (await safely(listSessions))?.[0];
+  // A run or an import may have started while the session store was being read.
+  if (!session || lastSamples || experiment.isActive()) return;
+  showSession(session, `Reopened ${sessionName(session)}`);
 }
 
 syncPaceButtons();

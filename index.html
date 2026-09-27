@@ -13,8 +13,8 @@
         <h1>Pursuit Tracking Modeler</h1>
       </div>
       <div class="topbar-actions">
-        <button type="button" id="dataBtn" title="Every run you have recorded, plus import and export">Recordings</button>
-        <button type="button" id="settingsBtn" title="Theme, trial pace, sample period and display">Settings</button>
+        <button type="button" id="sessionsBtn" title="Every session you have recorded, plus import and export">Sessions</button>
+        <button type="button" id="settingsBtn" title="Theme, step pace, sample period and display">Settings</button>
       </div>
 
     </header>
@@ -41,7 +41,7 @@
            starting position the instant Record is clicked. -->
       <div class="stage-actions" id="stageActions">
         <div class="action-row">
-          <button type="button" id="recordBtn" class="primary" aria-describedby="stageGuide" title="Record a new run — track the target with your pointer (Space starts and stops too)">Record</button>
+          <button type="button" id="recordBtn" class="primary" aria-describedby="stageGuide" title="Record a new session — track the target with your pointer (the Space bar starts and stops it too)">Record session</button>
         </div>
         <div class="action-row">
           <!-- aria-disabled rather than disabled: a truly disabled control gets
@@ -58,26 +58,26 @@
     </section>
 
     <main class="deck">
-      <article class="card trials-card">
+      <article class="card session-card">
         <header class="card-head split-head">
-          <!-- The open recording's name rides in the heading: the trials below
+          <!-- The open session's name rides in the heading: the step responses below
                belong to it, and with several kept nothing else says which.
-               Click it to rename the recording in place. -->
-          <h2 class="trials-title">Recording<span id="recordingSep" hidden> · </span><span id="recordingName" role="button" tabindex="0" hidden></span><input id="recordingNameInput" type="text" maxlength="120" aria-label="Name this recording" hidden /></h2>
-          <div class="card-note trial-notes" hidden>
-            <p id="trialCountNote"></p>
-            <p>Untick a trial to leave it out of the model</p>
+               Click it to rename the session in place. -->
+          <h2 class="session-title">Session<span id="sessionSep" hidden> · </span><span id="sessionName" role="button" tabindex="0" hidden></span><input id="sessionNameInput" type="text" maxlength="120" aria-label="Name this session" hidden /></h2>
+          <div class="card-note response-notes" hidden>
+            <p id="responseCountNote"></p>
+            <p>Untick a step response to leave it out of the model</p>
           </div>
         </header>
         <div id="filmstrip" class="filmstrip">
-          <p class="empty">Trials appear here as you record, one per step.</p>
+          <p class="empty">Step responses appear here as you record, one per step.</p>
         </div>
 
-        <!-- Hidden until there is a trial to show: empty plot frames say
+        <!-- Hidden until there is a step response to show: empty plot frames say
              nothing, and they were most of the card's height. -->
-        <div class="trial-detail" id="trialDetail" hidden>
+        <div class="response-detail" id="responseDetail" hidden>
           <header class="card-head split-head">
-            <h3 id="trialDetailHeading">Trial details</h3>
+            <h3 id="responseDetailHeading">Step details</h3>
             <!-- One key for all three plots, outside them, so no line is ever
                  drawn through it. The plots share names: Measured and Model
                  mean the same thing in the time and frequency domains. -->
@@ -112,31 +112,31 @@
       </article>
 
       <article class="card readout-card">
-        <header class="card-head">
+        <header class="card-head split-head">
           <h2 id="readoutHeading">Your model</h2>
           <p class="card-note" id="readoutSource"></p>
         </header>
         <div id="readout" class="readout">
-          <p class="empty">Record a few steps and your identified model appears here, updating as each trial completes.</p>
+          <p class="empty">Record a few step responses and your identified model appears here, updating as each step interval completes.</p>
         </div>
       </article>
     </main>
     </div>
 
-    <dialog id="dataDialog" class="settings">
+    <dialog id="sessionsDialog" class="settings">
       <header class="settings-head">
-        <h2>Recordings</h2>
+        <h2>Recorded sessions</h2>
       </header>
       <div class="settings-body">
-        <p class="empty" id="libraryEmpty">Every run you record is kept here, so a reload never loses one.</p>
-        <p class="library-warning" id="libraryUnavailable" hidden>This browser is not letting the app keep recordings, so export any run you want to keep.</p>
-        <ul class="library" id="libraryList"></ul>
+        <p class="empty" id="sessionsEmpty">Every session you record is kept here, so a reload never loses one.</p>
+        <p class="sessions-warning" id="sessionsUnavailable" hidden>This browser is not letting the app keep sessions, so export any session you want to keep.</p>
+        <ul class="session-list" id="sessionList"></ul>
       </div>
       <!-- Every dialog closes the same way: secondary actions on the left of
            the footer, Done on the right. -->
       <form method="dialog" class="settings-footer">
         <div class="footer-actions">
-          <button type="button" id="loadDataBtn" class="ghost" title="Add a .txt recording to your recordings and open it">Import .txt&hellip;</button>
+          <button type="button" id="loadDataBtn" class="ghost" title="Add a session from a .txt file and open it">Import .txt&hellip;</button>
           <input id="fileInput" type="file" accept=".txt" hidden />
         </div>
         <button class="primary" value="close">Done</button>
@@ -175,8 +175,8 @@
           </div>
         </div>
         <div class="field">
-          <span>Trial pace</span>
-          <div class="segmented" id="paceGroup" role="radiogroup" aria-label="Trial pace">
+          <span>Step interval pace</span>
+          <div class="segmented" id="paceGroup" role="radiogroup" aria-label="Step interval pace">
             <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast &middot; 2&nbsp;s</button>
             <button type="button" role="radio" data-pace="4000" aria-checked="true">Normal &middot; 4&nbsp;s</button>
             <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow &middot; 8&nbsp;s</button>
@@ -184,7 +184,7 @@
         </div>
         <label class="field">
           <span>Average time between steps (ms)</span>
-          <input id="trialPeriod" type="number" value="4000" min="1000" max="10000" step="100" />
+          <input id="stepPeriod" type="number" value="4000" min="1000" max="10000" step="100" />
         </label>
         <label class="field">
           <span>Sample period (ms)</span>

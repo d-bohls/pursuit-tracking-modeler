@@ -30,7 +30,7 @@ export function parseSamplesTable(text: string): RawSamples {
 }
 
 /** Reads either supported format, choosing by content. */
-export function parseRecording(text: string): RawSamples {
+export function parseSessionFile(text: string): RawSamples {
   return /All Samples/.test(text) ? parseAllSamplesBlock(text) : parseSamplesTable(text);
 }
 

@@ -75,7 +75,7 @@ const lower = { x: plot.x, y: plot.y + 60 };
 await page.waitForTimeout(800);
 if (/^Recording/.test(await status())) fail('a second run started after the lift');
 
-// 4. a tap stops a replay. Needs trials to replay, so load the reference data.
+// 4. a tap stops a replay. Needs step responses to replay, so load the reference data.
 await page.locator('#fileInput').setInputFiles(join(root, 'test/data/reference-data.txt'));
 await page.waitForTimeout(2500);
 await page.locator('#replayBtn').tap();

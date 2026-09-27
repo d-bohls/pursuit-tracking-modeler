@@ -20,7 +20,7 @@ interface Chrome {
   muted: string;
   /** The measurement -- your recorded response. */
   measured: string;
-  /** The target, the step every trial responds to. */
+  /** The target, the step every step response responds to. */
   target: string;
   /** The second-order fit, and the identified model everywhere else. */
   second: string;
@@ -36,7 +36,7 @@ function chromeOf(canvas: HTMLCanvasElement): Chrome {
     muted: read('--plot-muted', '#898781'),
     measured: read('--series-you', '#eb6834'),
     target: read('--series-target', '#2a78d6'),
-    second: read('--series-model', '#1baf7a'),
+    second: read('--series-model', '#15946a'),
   };
 }
 
@@ -64,7 +64,7 @@ function prepare(canvas: HTMLCanvasElement, surface: string) {
 /**
  * Blanks a plot. Needed because the canvases keep whatever was last drawn on
  * them: a caller that simply returns early when it has nothing to show leaves
- * the previous trial's plot on screen, claiming to describe data that is gone.
+ * the previous step response's plot on screen, claiming to describe data that is gone.
  */
 export function clearPlot(canvas: HTMLCanvasElement) {
   prepare(canvas, chromeOf(canvas).surface);
@@ -240,7 +240,7 @@ export function plotPoleLocations(
 }
 
 export interface StepPlotSeries {
-  /** The trial's target: the step. */
+  /** The step response's target: the step. */
   target: Float64Array;
   /** What was recorded in response. */
   measured: Float64Array;
@@ -254,7 +254,7 @@ export interface StepPlotSeries {
 }
 
 /**
- * One trial in the time domain: the step, your response, and the model's
+ * One step response in the time domain: the step, your response, and the model's
  * response to the very same step. The frequency plot says how well the model
  * fits; this one shows it, in the terms you tracked in.
  */
@@ -289,7 +289,7 @@ export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeri
   // Screen coordinates, larger is lower -- the same way up as the live plot.
   const yAt = (v: number) => marginT + ((v - lo) / (hi - lo)) * plotH;
 
-  // The level the target stepped FROM, which every trial is measured against.
+  // The level the target stepped FROM, which every step response is measured against.
   ctx.strokeStyle = c.grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -340,20 +340,20 @@ export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeri
 }
 
 /**
- * The thumbnail on a trial card: this trial's step and the response to it,
+ * The thumbnail on a step response card: this step response's step and the response to it,
  * on a shared scale. Small enough to read as a shape rather than a chart --
- * its job is to let you recognise a bad trial at a glance, before reading a
+ * its job is to let you recognise a bad step response at a glance, before reading a
  * single number.
  */
 /**
- * `lead` is a few samples from before the step, drawn ahead of the trial so
+ * `lead` is a few samples from before the step, drawn ahead of the step response so
  * the thumbnail shows the step itself, with a dashed divider where it
  * happened -- the same mark the live plot draws.
  */
-export function plotTrialSparkline(
+export function plotResponseSparkline(
   canvas: HTMLCanvasElement,
-  trialXn: Float64Array,
-  trialYn: Float64Array,
+  responseXn: Float64Array,
+  responseYn: Float64Array,
   lead?: { xn: Float64Array; yn: Float64Array },
 ) {
   const c = chromeOf(canvas);
@@ -366,8 +366,8 @@ export function plotTrialSparkline(
     out.set(tail, before);
     return out;
   };
-  const xn = join(lead?.xn, trialXn);
-  const yn = join(lead?.yn, trialYn);
+  const xn = join(lead?.xn, responseXn);
+  const yn = join(lead?.yn, responseYn);
 
   const n = Math.min(xn.length, yn.length);
   if (n < 2) return;

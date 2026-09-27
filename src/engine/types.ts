@@ -1,10 +1,10 @@
 // Shared types for the system-identification engine.
 
-/** One experiment trial: a step input and the human operator's tracking response. */
-export interface Trial {
-  /** Target position x[n], time-shifted so the trial starts at 0. */
+/** One experiment step response: a step input and the human operator's tracking response. */
+export interface StepResponse {
+  /** Target position x[n], time-shifted so the step response starts at 0. */
   xn: Float64Array;
-  /** Operator (mouse) position y[n], time-shifted so the trial starts at 0. */
+  /** Operator (mouse) position y[n], time-shifted so the step response starts at 0. */
   yn: Float64Array;
   /** Deconvolved impulse response h[n] (populated by calculateImpulseResponse). */
   hn?: Float64Array;
