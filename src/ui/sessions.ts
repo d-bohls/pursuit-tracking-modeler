@@ -120,3 +120,26 @@ export async function updateSession(id: number, patch: Partial<NewSession>): Pro
 export async function deleteSession(id: number): Promise<void> {
   await request('readwrite', (s) => s.delete(id));
 }
+
+/**
+ * Which recording is open, remembered so a reload reopens THAT one rather
+ * than whichever is newest. Browser storage: losing it only means the newest
+ * is reopened instead, so a failure is ignored.
+ */
+const OPEN_KEY = 'pursuit-tracking-modeler.openSession';
+export function rememberOpen(id: number | null) {
+  try {
+    if (id === null) localStorage.removeItem(OPEN_KEY);
+    else localStorage.setItem(OPEN_KEY, String(id));
+  } catch {
+    /* the newest is reopened instead */
+  }
+}
+export function rememberedOpen(): number | null {
+  try {
+    const id = Number(localStorage.getItem(OPEN_KEY));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
