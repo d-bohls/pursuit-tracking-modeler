@@ -311,7 +311,7 @@ button.primary[data-recording="true"] {
 .stage-dim {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--page) 62%, transparent);
+  background: color-mix(in srgb, var(--page) 72%, transparent);
   opacity: 0;
   transition: opacity 220ms ease;
   pointer-events: none;
@@ -334,6 +334,16 @@ button.primary[data-recording="true"] {
 }
 .stage-actions[hidden] { display: none; }
 .action-row > button { min-width: 0; width: 100%; pointer-events: auto; white-space: nowrap; }
+/* Raised off the plot: a firmer edge than the page's buttons, and a shadow,
+ * so they hold their own over a busy trace in either theme. */
+.action-row > button:not([data-recording="true"]) {
+  border-color: color-mix(in srgb, var(--ink) 32%, var(--card));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 4px 14px rgb(0 0 0 / 0.14);
+}
+.action-row > button.primary#recordBtn:not([data-recording="true"]) {
+  background: color-mix(in srgb, var(--critical) 14%, var(--card));
+  border-color: color-mix(in srgb, var(--critical) 70%, var(--card));
+}
 /* A touch on Record holds a recording, so the finger will slide from it onto
  * the plot: no scrolling (which would cancel the touch and end the run), and
  * no long-press selection or callout. */
@@ -542,9 +552,8 @@ button.primary[data-recording="true"] {
 
 /* ---------------------------------------------------------- the readout */
 
-/* Numbers on the left, the sentence and the maths on the right, as one row.
- * The tiles fit four across when there is room and fall to two when there
- * isn't; below the breakpoint the whole thing stacks. */
+/* Numbers on the left, the sentence and the maths on the right, as one row;
+ * below the breakpoint the whole thing stacks. */
 .readout-row {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
@@ -559,7 +568,11 @@ button.primary[data-recording="true"] {
 
 .readout-text > :first-child { margin-top: 0; }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(122px, 1fr)); gap: 12px; }
+/* Four tiles, two by two, never three and a straggler; one column when the
+ * box around them is too narrow for two. */
+.tiles-box { container-type: inline-size; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@container (max-width: 255px) { .tiles { grid-template-columns: minmax(0, 1fr); } }
 
 .tile {
   border: 1px solid var(--line);

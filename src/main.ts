@@ -873,7 +873,7 @@ function renderReadout() {
       : '';
 
   readoutEl.innerHTML =
-    `<div class="readout-row"><div class="tiles">${tiles}</div>` +
+    `<div class="readout-row"><div class="tiles-box"><div class="tiles">${tiles}</div></div>` +
     `<div class="readout-text">${verdict}${continuous}${discrete}${details}${flag}</div></div>`;
 }
 
