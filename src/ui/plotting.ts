@@ -11,6 +11,8 @@ export interface FrequencyPlotSeries {
   firstOrder: Float64Array;
   /** Magnitude response of the fitted second-order model. */
   secondOrder: Float64Array;
+  /** Legend text for `secondOrder`, when it is not the fit (a dragged pole). */
+  secondOrderLabel?: string;
 }
 
 interface Chrome {
@@ -59,6 +61,32 @@ function prepare(canvas: HTMLCanvasElement, surface: string) {
   ctx.fillStyle = surface;
   ctx.fillRect(0, 0, w, h);
   return { ctx, width: w, height: h };
+}
+
+type LegendEntry = [label: string, color: string, dash: number[]];
+
+/**
+ * A key in the top-right corner, sized to its longest label so a longer entry
+ * ("2nd-order (dragged)") cannot run off the edge of the plot.
+ */
+function drawLegend(ctx: CanvasRenderingContext2D, entries: LegendEntry[], right: number, top: number, muted: string) {
+  ctx.font = '11px system-ui, sans-serif';
+  const widest = Math.max(...entries.map(([label]) => ctx.measureText(label).width));
+  const lx = right - widest - 24;
+  let ly = top;
+  for (const [label, color, dash] of entries) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(lx, ly - 4);
+    ctx.lineTo(lx + 18, ly - 4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = muted;
+    ctx.fillText(label, lx + 24, ly);
+    ly += 15;
+  }
 }
 
 /**
@@ -149,36 +177,41 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   drawSeries(series.sampled, c.measured, 2, []);
 
   // legend, top-right so it stays clear of the low-frequency peak
-  const legend: Array<[string, string, number[]]> = [
-    ['Measured', c.measured, []],
-    ['2nd-order fit', c.second, []],
-    ['1st-order fit', c.first, [5, 4]],
-  ];
-  ctx.font = '11px system-ui, sans-serif';
-  let ly = marginT + 12;
-  const lx = width - marginR - 110;
-  for (const [label, color, dash] of legend) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.setLineDash(dash);
-    ctx.beginPath();
-    ctx.moveTo(lx, ly - 4);
-    ctx.lineTo(lx + 18, ly - 4);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = c.muted;
-    ctx.fillText(label, lx + 24, ly);
-    ly += 15;
-  }
+  drawLegend(
+    ctx,
+    [
+      ['Measured', c.measured, []],
+      [series.secondOrderLabel ?? '2nd-order fit', c.second, []],
+      ['1st-order fit', c.first, [5, 4]],
+    ],
+    width - marginR - 6,
+    marginT + 12,
+    c.muted,
+  );
 }
 
-export function plotPoleLocations(canvas: HTMLCanvasElement, poles: Array<{ p1: number; p2: number }>) {
+/**
+ * Where the unit circle sits on a pole plot of this size, in CSS pixels.
+ * Exported so pointer handling maps a press to z exactly as drawing maps z
+ * to pixels.
+ */
+export function poleGeometry(width: number, height: number) {
+  return { cx: width / 2, cy: height / 2, r: Math.min(width, height) / 2 - 16 };
+}
+
+/**
+ * `ghost` is the fitted pole, drawn faintly while `poles` shows a dragged one,
+ * so you can always see how far you have moved from what the data said.
+ */
+export function plotPoleLocations(
+  canvas: HTMLCanvasElement,
+  poles: Array<{ p1: number; p2: number }>,
+  ghost?: { p1: number; p2: number },
+) {
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);
 
-  const cx = width / 2;
-  const cy = height / 2;
-  const r = Math.min(width, height) / 2 - 24;
+  const { cx, cy, r } = poleGeometry(width, height);
 
   ctx.strokeStyle = c.axis;
   ctx.lineWidth = 1;
@@ -198,8 +231,9 @@ export function plotPoleLocations(canvas: HTMLCanvasElement, poles: Array<{ p1: 
   ctx.font = '10px system-ui, sans-serif';
   ctx.fillText('unit circle', cx - r, cy - r - 6);
 
-  for (const { p1, p2 } of poles) {
-    ctx.strokeStyle = c.second;
+  const cross = (p1: number, p2: number, color: string, alpha: number) => {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     for (const y of [cy - p2 * r, cy + p2 * r]) {
       const x = cx + p1 * r;
@@ -210,7 +244,129 @@ export function plotPoleLocations(canvas: HTMLCanvasElement, poles: Array<{ p1: 
       ctx.lineTo(x - 5, y + 5);
       ctx.stroke();
     }
+    ctx.globalAlpha = 1;
+  };
+  if (ghost) cross(ghost.p1, ghost.p2, c.muted, 0.7);
+  for (const { p1, p2 } of poles) {
+    // A faint ring says "this can be picked up" without a word of text.
+    ctx.fillStyle = c.second;
+    ctx.globalAlpha = 0.14;
+    for (const y of [cy - p2 * r, cy + p2 * r]) {
+      ctx.beginPath();
+      ctx.arc(cx + p1 * r, y, 11, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    cross(p1, p2, c.second, 1);
   }
+}
+
+export interface StepPlotSeries {
+  /** The trial's target: the step. */
+  target: Float64Array;
+  /** What was recorded in response. */
+  measured: Float64Array;
+  /** The model's response to the same target. */
+  model: Float64Array;
+  /** The fitted model's response, drawn faintly while `model` is a dragged one. */
+  fit?: Float64Array;
+  samplePeriodMs: number;
+  /** Samples from before the step at the start of every series; the step is t = 0. */
+  stepIndex?: number;
+}
+
+/**
+ * One trial in the time domain: the step, your response, and the model's
+ * response to the very same step. The frequency plot says how well the model
+ * fits; this one shows it, in the terms you tracked in.
+ */
+export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeries) {
+  const c = chromeOf(canvas);
+  const { ctx, width, height } = prepare(canvas, c.surface);
+
+  const n = series.target.length;
+  if (n < 2) return;
+
+  const all = [series.target, series.measured, series.model, ...(series.fit ? [series.fit] : [])];
+  let lo = 0;
+  let hi = 0;
+  for (const data of all) {
+    for (let i = 0; i < n; i++) {
+      if (!Number.isFinite(data[i])) continue;
+      lo = Math.min(lo, data[i]);
+      hi = Math.max(hi, data[i]);
+    }
+  }
+  const span = hi - lo || 1;
+  lo -= span * 0.08;
+  hi += span * 0.08;
+
+  const marginL = 12;
+  const marginR = 12;
+  const marginT = 12;
+  const marginB = 22;
+  const plotW = width - marginL - marginR;
+  const plotH = height - marginT - marginB;
+  const xAt = (i: number) => marginL + (i / (n - 1)) * plotW;
+  // Screen coordinates, larger is lower -- the same way up as the live plot.
+  const yAt = (v: number) => marginT + ((v - lo) / (hi - lo)) * plotH;
+
+  // The level the target stepped FROM, which every trial is measured against.
+  ctx.strokeStyle = c.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(marginL, yAt(0));
+  ctx.lineTo(width - marginR, yAt(0));
+  ctx.stroke();
+
+  // The step itself, marked as on the live plot and the thumbnails. It lands
+  // somewhere between the last sample before it and the first after.
+  const k = series.stepIndex ?? 0;
+  const stepX = k > 0 ? xAt(k - 0.5) : marginL;
+  if (k > 0) {
+    ctx.strokeStyle = c.axis;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(Math.round(stepX) + 0.5, marginT);
+    ctx.lineTo(Math.round(stepX) + 0.5, marginT + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.fillStyle = c.muted;
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillText('0 s', k > 0 ? stepX - ctx.measureText('0 s').width / 2 : marginL, height - 7);
+  const seconds = ((n - 1 - Math.max(0, k - 0.5)) * series.samplePeriodMs) / 1000;
+  const end = `${seconds.toFixed(1)} s`;
+  ctx.fillText(end, width - marginR - ctx.measureText(end).width, height - 7);
+
+  const line = (data: Float64Array, color: string, lw: number, dash: number[], alpha = 1) => {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.setLineDash(dash);
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      if (i === 0) ctx.moveTo(xAt(i), yAt(data[i]));
+      else ctx.lineTo(xAt(i), yAt(data[i]));
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  };
+  line(series.target, c.first, 2, []);
+  if (series.fit) line(series.fit, c.second, 1.5, [4, 3], 0.6);
+  line(series.measured, c.measured, 2, []);
+  line(series.model, c.second, 2, []);
+
+  const legend: LegendEntry[] = [
+    ['Target', c.first, []],
+    ['Measured', c.measured, []],
+    [series.fit ? 'Dragged model' : 'Model', c.second, []],
+  ];
+  if (series.fit) legend.push(['Fit', c.second, [4, 3]]);
+  drawLegend(ctx, legend, width - marginR - 4, marginT + 10, c.muted);
 }
 
 /**
@@ -219,9 +375,29 @@ export function plotPoleLocations(canvas: HTMLCanvasElement, poles: Array<{ p1: 
  * its job is to let you recognise a bad trial at a glance, before reading a
  * single number.
  */
-export function plotTrialSparkline(canvas: HTMLCanvasElement, xn: Float64Array, yn: Float64Array) {
+/**
+ * `lead` is a few samples from before the step, drawn ahead of the trial so
+ * the thumbnail shows the step itself, with a dashed divider where it
+ * happened -- the same mark the live plot draws.
+ */
+export function plotTrialSparkline(
+  canvas: HTMLCanvasElement,
+  trialXn: Float64Array,
+  trialYn: Float64Array,
+  lead?: { xn: Float64Array; yn: Float64Array },
+) {
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);
+
+  const before = lead ? Math.min(lead.xn.length, lead.yn.length) : 0;
+  const join = (head: Float64Array | undefined, tail: Float64Array) => {
+    const out = new Float64Array(before + tail.length);
+    if (head) out.set(head.subarray(head.length - before));
+    out.set(tail, before);
+    return out;
+  };
+  const xn = join(lead?.xn, trialXn);
+  const yn = join(lead?.yn, trialYn);
 
   const n = Math.min(xn.length, yn.length);
   if (n < 2) return;
@@ -235,7 +411,23 @@ export function plotTrialSparkline(canvas: HTMLCanvasElement, xn: Float64Array, 
   const span = hi - lo || 1;
   const pad = 4;
   const xAt = (i: number) => (i / (n - 1)) * width;
-  const yAt = (v: number) => pad + (1 - (v - lo) / span) * (height - pad * 2);
+  // Samples are in screen coordinates, where larger is LOWER. Drawn the other
+  // way up, every thumbnail was a mirror image of the step you tracked.
+  const yAt = (v: number) => pad + ((v - lo) / span) * (height - pad * 2);
+
+  if (before > 0) {
+    // Halfway between the last sample before the step and the first after:
+    // the step landed somewhere in that interval.
+    const x = Math.round(xAt(before - 0.5)) + 0.5;
+    ctx.strokeStyle = c.axis;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   const line = (data: Float64Array, color: string) => {
     ctx.strokeStyle = color;

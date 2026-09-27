@@ -78,9 +78,12 @@ await closeData();
 const cards = await page.locator('.trial-card').count();
 if (cards !== 10) fail(`expected 10 trial cards, got ${cards}`);
 
+// The display typesets the equation, so hold it to the engine string it carries.
+const modelOf = () => page.locator('.diffeq').getAttribute('data-equation');
+const equation = (await modelOf()) ?? '';
 const details = (await page.locator('.details-line').textContent()) ?? '';
-if (!details.includes(EXPECTED_MEDIAN_2ND_ORDER)) {
-  fail(`median second-order model mismatch.\n  expected to contain: ${EXPECTED_MEDIAN_2ND_ORDER}\n  got: ${details}`);
+if (equation !== EXPECTED_MEDIAN_2ND_ORDER) {
+  fail(`median second-order model mismatch.\n  expected: ${EXPECTED_MEDIAN_2ND_ORDER}\n  got: ${equation}`);
 }
 
 // 5. the headline readout rendered, in units a human can read
@@ -96,17 +99,17 @@ if (!(tau > 0.01 && tau < 10)) fail(`first-order time constant ${tau} s is not p
 
 // 6. excluding a trial re-derives the summary from what is left, and putting
 // it back restores the original model exactly
-const before = await page.locator('.details-line').textContent();
+const before = await modelOf();
 await page.locator('.trial-card input').first().uncheck();
 await page.waitForTimeout(300);
-const excluded = await page.locator('.details-line').textContent();
+const excluded = await modelOf();
 if (excluded === before) fail('excluding a trial did not change the identified model');
 if (!/1 excluded/.test((await page.locator('#readoutSource').textContent()) ?? '')) {
   fail('readout did not report the excluded trial');
 }
 await page.locator('.trial-card input').first().check();
 await page.waitForTimeout(300);
-if ((await page.locator('.details-line').textContent()) !== before) {
+if ((await modelOf()) !== before) {
   fail('re-including the trial did not restore the model');
 }
 
@@ -129,6 +132,21 @@ const canvasHasInk = (selector) =>
 if (!(await canvasHasInk('#freqGraph'))) fail('frequency response canvas is blank');
 if (!(await canvasHasInk('#poleGraph'))) fail('pole plot canvas is blank');
 if (!(await canvasHasInk('.trial-card canvas'))) fail('trial sparkline is blank');
+if (!(await canvasHasInk('#stepGraph'))) fail('step response canvas is blank');
+
+// 7b. dragging the pole is exploration: moving it off the fit makes the fit
+// worse (that is what "best fit" means), and Escape puts it back exactly.
+const errOf = async () => Number(((await page.locator('#poleReadout').textContent()) ?? '').match(/([\d.]+)% err/)?.[1]);
+const atFit = await errOf();
+await page.locator('#poleGraph').focus();
+await page.keyboard.press('Shift+ArrowLeft');
+await page.keyboard.press('Shift+ArrowLeft');
+const moved = await errOf();
+if (!(moved > atFit)) fail(`moving the pole off the fit did not raise the error (${atFit}% -> ${moved}%)`);
+if (await page.locator('#poleResetBtn').isHidden()) fail('"Back to the fit" did not appear after moving the pole');
+await page.keyboard.press('Escape');
+if ((await errOf()) !== atFit) fail('Escape did not return the pole to the fit');
+if ((await modelOf()) !== before) fail('dragging the pole changed the identified model');
 
 // 8. dark mode repaints the canvases too -- they cannot inherit CSS colours
 const surfaceOf = (selector) =>
@@ -164,5 +182,6 @@ if (process.exitCode) {
   console.log('  - 10 trial cards rendered');
   console.log(`  - median model matches engine output: ${EXPECTED_MEDIAN_2ND_ORDER}`);
   console.log('  - excluding and restoring a trial re-derives the model');
-  console.log('  - frequency, pole and sparkline canvases drew, and follow the theme');
+  console.log('  - step, frequency, pole and sparkline canvases drew, and follow the theme');
+  console.log('  - moving the pole off the fit raises the error, and Escape restores it');
 }

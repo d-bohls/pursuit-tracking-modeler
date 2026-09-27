@@ -48,7 +48,20 @@ export interface ExperimentState {
  */
 export const LOGICAL_HEIGHT = 493;
 
-const MAX_TRIALS = 10;
+/**
+ * A run ends itself after this many complete trials. A trial runs from one
+ * step to the next, so it takes MAX_TRIALS + 1 steps: the last one only
+ * closes trial MAX_TRIALS off.
+ */
+export const MAX_TRIALS = 10;
+
+/**
+ * Each gap between steps is the trial period scaled by a random factor in
+ * [1 - JITTER, 1 + JITTER]. On a fixed beat you learn when the next step is
+ * due, and a step you can anticipate measures your timing, not your reaction:
+ * the identified delay comes out short. The mean gap is still the period.
+ */
+const STEP_JITTER = 0.25;
 const BUFFER_ZONE = 50;
 /** How much time one full plot width represents. */
 const VISIBLE_MS = 20_000;
@@ -110,6 +123,7 @@ interface Palette {
   surface: string;
   grid: string;
   axis: string;
+  muted: string;
   target: string;
   you: string;
   model: string;
@@ -155,7 +169,7 @@ export class TrackingExperiment {
 
   private sampleTimerHandle: ReturnType<typeof setInterval> | null = null;
   private scrollTimerHandle: ReturnType<typeof setInterval> | null = null;
-  private trialTimerHandle: ReturnType<typeof setInterval> | null = null;
+  private trialTimerHandle: ReturnType<typeof setTimeout> | null = null;
   private frameHandle: number | null = null;
 
   private onEnd: (result: ExperimentResult) => void;
@@ -172,6 +186,7 @@ export class TrackingExperiment {
     surface: '#ffffff',
     grid: '#e1e0d9',
     axis: '#c3c2b7',
+    muted: '#898781',
     target: '#2a78d6',
     you: '#eb6834',
     model: '#1baf7a',
@@ -212,13 +227,11 @@ export class TrackingExperiment {
     // the same session.
     canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') {
-        if (this.active) return; // already running: the lift will end it
-        this.touchPointerId = e.pointerId;
-        canvas.setPointerCapture(e.pointerId);
-        const rect = canvas.getBoundingClientRect();
-        const v = ((e.clientY - rect.top) / rect.height) * LOGICAL_HEIGHT;
-        this.pointerY = Math.max(0, Math.min(LOGICAL_HEIGHT, v));
-        this.onTouchStart();
+        if (!this.active) this.holdToRecord(e);
+        // A finger already holding a recording is the instrument, and a second
+        // one should not end the run. Anything else -- a replay -- has no
+        // finger to lift, so a tap stops it, as a click does.
+        else if (this.touchPointerId === null) this.onGraphPress();
         return;
       }
       if (this.active) this.onGraphPress();
@@ -262,6 +275,7 @@ export class TrackingExperiment {
       surface: read('--plot-surface', '#ffffff'),
       grid: read('--plot-grid', '#e1e0d9'),
       axis: read('--plot-axis', '#c3c2b7'),
+      muted: read('--plot-muted', '#898781'),
       target: read('--series-target', '#2a78d6'),
       you: read('--series-you', '#eb6834'),
       model: read('--series-model', '#1baf7a'),
@@ -309,6 +323,11 @@ export class TrackingExperiment {
 
   getPhase(): Phase {
     return this.phase;
+  }
+
+  /** True if the plot is currently showing a model line, from any run. */
+  hasModelTrace(): boolean {
+    return this.history.some((f) => f.model !== null);
   }
 
   getSamples(): ExperimentResult {
@@ -366,7 +385,7 @@ export class TrackingExperiment {
 
     this.sampleTimerHandle = setInterval(() => this.onSampleTick(), this.config.samplePeriodMs);
     this.scrollTimerHandle = setInterval(() => this.onScrollTick(), this.config.scrollPeriodMs);
-    this.trialTimerHandle = setInterval(() => this.onTrialTick(), this.config.trialPeriodMs);
+    this.scheduleStep();
     this.startDrawing();
     this.emitState('recording');
   }
@@ -470,13 +489,37 @@ export class TrackingExperiment {
     this.emitState('finished');
   }
 
+  /**
+   * Starts a recording that lasts as long as this touch does. The press may
+   * begin on the plot or on the Record button: the pointer is captured to the
+   * plot either way, so its moves track and its lift ends the run even when
+   * the finger went down on a button that has since been hidden.
+   */
+  holdToRecord(e: PointerEvent) {
+    if (this.active) return;
+    this.touchPointerId = e.pointerId;
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // The pointer is already gone (lifted before this ran). Its pointerup
+      // has been and gone, so the run would never end: do not start one.
+      this.touchPointerId = null;
+      return;
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    const v = ((e.clientY - rect.top) / rect.height) * LOGICAL_HEIGHT;
+    this.pointerY = Math.max(0, Math.min(LOGICAL_HEIGHT, v));
+    this.onTouchStart();
+  }
+
   end() {
     if (!this.active || this.phase !== 'recording') return;
     this.active = false;
     this.touchPointerId = null;
-    for (const h of [this.sampleTimerHandle, this.scrollTimerHandle, this.trialTimerHandle]) {
+    for (const h of [this.sampleTimerHandle, this.scrollTimerHandle]) {
       if (h) clearInterval(h);
     }
+    if (this.trialTimerHandle) clearTimeout(this.trialTimerHandle);
     this.sampleTimerHandle = this.scrollTimerHandle = this.trialTimerHandle = null;
     this.stopDrawing();
     this.draw();
@@ -484,11 +527,24 @@ export class TrackingExperiment {
     this.onEnd(this.getSamples());
   }
 
+  /** Arms the next step, a randomly jittered trial period from now. */
+  private scheduleStep() {
+    const factor = 1 + STEP_JITTER * (2 * Math.random() - 1);
+    this.trialTimerHandle = setTimeout(() => {
+      this.onTrialTick();
+      if (!this.active || this.phase !== 'recording') return;
+      if (this.trialTimerCount <= MAX_TRIALS) {
+        this.scheduleStep();
+      } else {
+        // That was the closing step. Stay just long enough for samples to
+        // land at the new level -- that is how a step is seen at all -- then
+        // stop, rather than recording a whole trial period nobody will use.
+        this.trialTimerHandle = setTimeout(() => this.end(), this.config.samplePeriodMs * 3.5);
+      }
+    }, this.config.trialPeriodMs * factor);
+  }
+
   private onTrialTick() {
-    if (this.trialTimerCount > MAX_TRIALS) {
-      this.end();
-      return;
-    }
     this.trialTimerCount += 1;
     let dy = this.randomInt(this.minDy, this.maxDy);
     if (this.randomInt(0, 1) === 0) dy = -dy;
@@ -615,9 +671,11 @@ export class TrackingExperiment {
     // Trial dividers: where the target stepped, i.e. where one trial ends and
     // the next begins. The analysis splits the recording at exactly these
     // instants, so drawing them makes the unit of analysis visible.
-    ctx.strokeStyle = this.palette.axis;
-    ctx.lineWidth = dpr;
-    ctx.setLineDash([2 * dpr, 4 * dpr]);
+    // Muted rather than axis grey: at axis contrast the dividers were easy
+    // to miss entirely, and they are the unit the whole analysis works in.
+    ctx.strokeStyle = this.palette.muted;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.setLineDash([5 * dpr, 4 * dpr]);
     for (let i = start; i < n; i++) {
       if (!this.history[i].stepped) continue;
       const x = xAt(i);

@@ -3,27 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tracking Lab</title>
+  <title>EE&nbsp;351M &mdash; System Identification of Manual Tracking</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
   <div id="app">
     <header class="topbar">
       <div class="brand">
-        <h1>Tracking Lab</h1>
-        <p>EE&nbsp;351M &mdash; human tracking system identification</p>
+        <h1>EE&nbsp;351M &mdash; System Identification of Manual Tracking</h1>
       </div>
 
     </header>
 
     <div class="workspace">
-    <section class="stage" aria-label="Tracking plot">
+    <section class="stage" id="stage" aria-label="Tracking plot" data-resting="true">
       <canvas id="graph"></canvas>
+      <!-- Veils the plot while the buttons are up, so they read as the thing
+           to act on and the last run reads as background. Sits directly over
+           the canvas; the legend and everything else paint above it. -->
+      <div class="stage-dim" aria-hidden="true"></div>
 
       <div class="stage-chrome">
         <ul class="legend">
           <li><span class="swatch swatch-target"></span>Target</li>
-          <li><span class="swatch swatch-you"></span>You</li>
+          <li><span class="swatch swatch-you"></span><span id="legendYou">You</span></li>
           <li class="legend-model" hidden><span class="swatch swatch-model"></span>Model prediction</li>
         </ul>
         <p class="status" id="status" role="status" aria-live="polite">Ready</p>
@@ -33,12 +36,22 @@
            at the middle of the plot, so the pointer is already at the
            starting position the instant Record is clicked. -->
       <div class="stage-actions" id="stageActions">
-        <button type="button" id="settingsBtn" title="Trial pace, sample period, and what drives the tracker">Settings</button>
-        <button type="button" id="recordBtn" class="primary" title="Record a new run — track the target with your pointer (space bar also starts and stops)">Record</button>
-        <!-- aria-disabled rather than disabled: a truly disabled control gets
-             no pointer events in Chrome, so its tooltip -- the one explaining
-             why it is unavailable -- would never appear. -->
-        <button type="button" id="simulateBtn" aria-disabled="true">Simulate</button>
+        <div class="action-row">
+          <button type="button" id="settingsBtn" title="Theme, trial pace, sample period and display">Settings</button>
+        </div>
+        <!-- Each callout is tied to its row, so it sits level with its own
+             button and points at it -- a help overlay rather than a caption. -->
+        <div class="action-row">
+          <button type="button" id="recordBtn" class="primary" aria-describedby="recordCallout" title="Record a new run — track the target with your pointer (Space starts and stops too)">Record</button>
+          <span class="callout" id="recordCallout">Record tracks your pointer height</span>
+        </div>
+        <div class="action-row">
+          <!-- aria-disabled rather than disabled: a truly disabled control gets
+               no pointer events in Chrome, so its tooltip -- the one explaining
+               why it is unavailable -- would never appear. -->
+          <button type="button" id="replayBtn" aria-disabled="true" aria-describedby="replayCallout">Replay</button>
+          <span class="callout" id="replayCallout">Replay shows the last run again with the model overlaid</span>
+        </div>
       </div>
       <!-- Lives in the empty half of the plot: the pen is anchored at the
            midpoint, so nothing is ever drawn to the right of it. -->
@@ -47,76 +60,86 @@
 
       <ul class="stage-hint" id="stageHint">
         <li>Record tracks your pointer height</li>
-        <li>Simulate replays your last run with the model beside it</li>
+        <li>Replay shows the last run again with the model overlaid</li>
       </ul>
     </section>
 
     <main class="deck">
+      <article class="card trials-card">
+        <header class="card-head split-head">
+          <h2>Trials</h2>
+          <p class="card-note">Untick a trial to leave it out of the model</p>
+          <button type="button" id="dataBtn" class="ghost" title="Save or open a recording, or read its raw samples">Recorded data&hellip;</button>
+        </header>
+        <div id="filmstrip" class="filmstrip">
+          <p class="empty">Trials appear here as you record, one per step.</p>
+        </div>
+
+        <div class="trial-detail">
+          <header class="card-head split-head">
+            <h3 id="trialDetailHeading">Trial details</h3>
+            <p class="card-note" id="trialDetailNote">Select a trial to see its details</p>
+          </header>
+          <div class="plots">
+            <figure class="step-figure">
+              <figcaption>Step response &mdash; measured vs model</figcaption>
+              <canvas id="stepGraph"></canvas>
+            </figure>
+            <figure class="freq-figure">
+              <figcaption>Frequency response &mdash; measured vs fitted models</figcaption>
+              <canvas id="freqGraph"></canvas>
+            </figure>
+            <figure class="pole-figure">
+              <figcaption>Poles (z&#8209;plane) &middot; drag to explore</figcaption>
+              <canvas id="poleGraph" tabindex="0" role="application"
+                aria-label="Second-order pole pair. Drag it, or use the arrow keys, to see how the model's response changes. Escape returns it to the fit."></canvas>
+              <div class="pole-readout">
+                <p id="poleReadout"></p>
+                <button type="button" id="poleResetBtn" class="ghost" hidden>Back to the fit</button>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </article>
+
       <article class="card readout-card">
         <header class="card-head">
-          <h2>Your tracking system</h2>
+          <h2 id="readoutHeading">Your tracking system</h2>
           <p class="card-note" id="readoutSource">No trials yet</p>
         </header>
         <div id="readout" class="readout">
           <p class="empty">Record a few steps and your identified model appears here, updating as each trial completes.</p>
         </div>
       </article>
-
-      <article class="card trials-card">
-        <header class="card-head">
-          <h2>Trials</h2>
-          <div class="card-head-right">
-            <p class="card-note">Untick a trial to leave it out of the model</p>
-            <button type="button" id="dataBtn" class="ghost" title="Save this recording, load a data file, or read the raw samples">Recorded data&hellip;</button>
-          </div>
-        </header>
-        <div id="filmstrip" class="filmstrip">
-          <p class="empty">Each completed step becomes a trial here.</p>
-        </div>
-
-        <div class="trial-detail">
-          <header class="card-head">
-            <h3 id="trialDetailHeading">Trial Details</h3>
-            <p class="card-note">Click a trial above to inspect it</p>
-          </header>
-          <div class="plots">
-            <figure>
-              <figcaption>Frequency response &mdash; measured vs fitted models</figcaption>
-              <canvas id="freqGraph"></canvas>
-            </figure>
-            <figure class="pole-figure">
-              <figcaption>Pole locations (z&#8209;plane)</figcaption>
-              <canvas id="poleGraph"></canvas>
-            </figure>
-          </div>
-        </div>
-      </article>
     </main>
     </div>
 
     <dialog id="dataDialog" class="settings">
-      <form method="dialog" class="settings-head">
+      <header class="settings-head">
         <h2>Recorded data</h2>
-        <button class="ghost" value="close">Done</button>
-      </form>
+      </header>
       <div class="settings-body">
-        <div class="drawer-actions">
-          <button type="button" id="saveDataBtn" class="ghost" disabled>Save recording&hellip;</button>
-          <button type="button" id="loadDataBtn" class="ghost">Load data file&hellip;</button>
-          <input id="fileInput" type="file" accept=".txt" hidden />
-        </div>
         <label class="field">
-          <span>Samples</span>
+          <span>Raw samples &middot; n, target x[n], you y[n]</span>
           <textarea id="samplesOut" readonly rows="12" spellcheck="false"></textarea>
         </label>
       </div>
+      <!-- Every dialog closes the same way: secondary actions on the left of
+           the footer, Done on the right. -->
+      <form method="dialog" class="settings-footer">
+        <div class="footer-actions">
+          <button type="button" id="saveDataBtn" class="ghost" disabled>Save recording&hellip;</button>
+          <button type="button" id="loadDataBtn" class="ghost">Open recording&hellip;</button>
+          <input id="fileInput" type="file" accept=".txt" hidden />
+        </div>
+        <button class="primary" value="close">Done</button>
+      </form>
     </dialog>
 
     <dialog id="settingsDialog" class="settings">
-      <form method="dialog" class="settings-head">
+      <header class="settings-head">
         <h2>Settings</h2>
-        <button class="ghost" value="close">Done</button>
-      </form>
+      </header>
       <div class="settings-body">
         <div class="field">
           <span>Theme</span>
@@ -129,27 +152,19 @@
         <div class="field">
           <span>Trial pace</span>
           <div class="segmented" id="paceGroup" role="radiogroup" aria-label="Trial pace">
-            <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast</button>
-            <button type="button" role="radio" data-pace="4000" aria-checked="true">Normal</button>
-            <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow</button>
+            <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast &middot; 2&nbsp;s</button>
+            <button type="button" role="radio" data-pace="4000" aria-checked="true">Normal &middot; 4&nbsp;s</button>
+            <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow &middot; 8&nbsp;s</button>
           </div>
         </div>
         <div class="settings-grid">
           <label class="field">
-            <span>Trial period (ms)</span>
+            <span>Average time between steps (ms)</span>
             <input id="trialPeriod" type="number" value="4000" min="1000" max="10000" step="100" />
           </label>
           <label class="field">
             <span>Sample period (ms)</span>
             <input id="samplePeriod" type="number" value="100" min="50" max="500" step="10" />
-          </label>
-          <label class="field">
-            <span>Drive the tracker with</span>
-            <select id="simulationMode">
-              <option value="none">Your pointer</option>
-              <option value="first">First-order model</option>
-              <option value="second">Second-order model</option>
-            </select>
           </label>
         </div>
         <label class="check">
@@ -158,13 +173,33 @@
         </label>
         <label class="check">
           <input id="discretePoints" type="checkbox" />
-          <span>Discrete points instead of lines</span>
+          <span>Draw samples as dots, not lines</span>
         </label>
-        <p class="sim-info" id="simModelInfo"></p>
-        <div class="settings-footer">
-          <button type="button" id="resetSettingsBtn" class="ghost" title="Put every setting on this panel back to its default and forget the stored ones">Reset to defaults</button>
-        </div>
+        <details class="advanced" id="advancedSettings">
+          <summary>Advanced &middot; self-test</summary>
+          <div class="advanced-body">
+            <label class="field">
+              <span>Who tracks the target</span>
+              <select id="simulationMode">
+                <option value="none">You</option>
+                <option value="first">First-order model</option>
+                <option value="second">Second-order model</option>
+              </select>
+            </label>
+            <p class="advanced-note">
+              Lets the identified model do the tracking instead of you. Identifying
+              a model&rsquo;s own run should give back that model&rsquo;s numbers,
+              which checks the whole pipeline end to end. Runs made this way are
+              labelled as model runs, never as yours.
+            </p>
+            <p class="sim-info" id="simModelInfo"></p>
+          </div>
+        </details>
       </div>
+      <form method="dialog" class="settings-footer">
+        <button type="button" id="resetSettingsBtn" class="ghost" title="Restore every setting here to its default">Reset to defaults</button>
+        <button class="primary" value="close">Done</button>
+      </form>
     </dialog>
   </div>
   <script type="module" src="/src/main.ts"></script>

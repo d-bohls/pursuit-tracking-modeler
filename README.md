@@ -29,7 +29,7 @@ useful for re-analyzing old recordings.
 - **The plot states its own affordance.** The instruction list is gone; the
   plot says `Click the plot to start`, then `Recording · N steps · Ms`.
   Space bar works too.
-- **Trials are objects, not table rows.** Each completed step becomes a card
+- **Trials are objects, not table rows.** Each step becomes a card
   with a thumbnail of the step and the response to it. Untick one and every
   number above re-derives from what is left — outlier rejection is a decision
   you make and see, not a heuristic that happens to you.

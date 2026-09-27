@@ -61,12 +61,22 @@ if (!/your identified model/.test(afterText)) fail(`readout should say it switch
 // 3. and the simulated run should visibly overshoot, since ζ=0.36 means ~29%
 // The run controls live on the plot now, and the mode lives in Settings.
 await page.locator('#settingsBtn').click();
+// The mode is a self-test now, tucked inside the Advanced disclosure.
+await page.locator('#advancedSettings summary').click();
 await page.selectOption('#simulationMode', 'second');
 await page.locator('#settingsDialog button[value="close"]').click();
 await page.locator('#recordBtn').click();
 await page.waitForTimeout(9000);
 await page.keyboard.press('Space');
 await page.waitForTimeout(500);
+
+// A model-driven run must be labelled as the model's, never as yours.
+const heading = (await page.locator('#readoutHeading').textContent()) ?? '';
+const statusLine = (await page.locator('#status').textContent()) ?? '';
+if (!/Second-order model · self-test/.test(heading)) fail(`model run presented as: "${heading}"`);
+if (!/^Model run stopped/.test(statusLine)) fail(`model run status reads: "${statusLine}"`);
+const legend = (await page.locator('#legendYou').textContent()) ?? '';
+if (legend === 'You') fail(`the legend captions the model run's trace "You"`);
 
 // Measure overshoot directly from the recorded samples: for each step of the
 // target, how far past it did the simulated response travel?

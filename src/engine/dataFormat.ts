@@ -25,7 +25,7 @@ export function parseSamplesTable(text: string): RawSamples {
     xs.push(x);
     ys.push(y);
   }
-  if (xs.length === 0) throw new Error('No "n  x[n]  y[n]" rows found in this file.');
+  if (xs.length === 0) throw new Error('This file has no sample table (n, x[n], y[n])');
   return { xs: Float64Array.from(xs), ys: Float64Array.from(ys) };
 }
 
@@ -37,7 +37,7 @@ export function parseRecording(text: string): RawSamples {
 export function parseAllSamplesBlock(fileText: string): RawSamples {
   const match = fileText.match(/=+\s*All Samples\s*=+\s*xs=\[([^\]]*)\];\s*ys=\[([^\]]*)\];/);
   if (!match) {
-    throw new Error('Could not find an "All Samples" block in this file.');
+    throw new Error('This file has no "All Samples" block');
   }
   const parseList = (s: string) =>
     Float64Array.from(

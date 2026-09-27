@@ -14,7 +14,8 @@
     "smoke-test": "node test/smoke-test.mjs",
     "model-check": "tsx test/model-check.ts",
     "scroll-test": "node test/scroll-test.mjs",
-    "simulation-test": "node test/simulation-test.mjs"
+    "simulation-test": "node test/simulation-test.mjs",
+    "touch-test": "node test/touch-test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.63.0",
