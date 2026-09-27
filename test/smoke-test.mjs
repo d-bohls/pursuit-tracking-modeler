@@ -52,7 +52,7 @@ const closeData = async () => {
 
 // 2. the empty state is honest: nothing kept, no step responses, no model
 await openData();
-if ((await page.locator('#sessionList .session-row').count()) !== 0) fail('recordings listed before any data');
+if ((await page.locator('#sessionList .session-row').count()) !== 0) fail('sessions listed before any data');
 await closeData();
 if ((await page.locator('.response-card').count()) !== 0) fail('response cards present before any data');
 if (!/Record a few step responses/.test((await page.locator('#readout').textContent()) ?? '')) {
@@ -97,7 +97,9 @@ const tiles = await page.locator('.tile-value').allTextContents();
 if (tiles.length !== 4) fail(`expected 4 readout tiles, got ${tiles.length}`);
 
 // Units guard. The continuous poles and the delays must share one time unit
-// (seconds / rad/s).
+// (seconds / rad/s). Getting this wrong is a silent 1000x error whose only
+// visible symptom is physically absurd numbers, so assert plausibility:
+// human tracking sits around tau ~ 0.1-1 s and wn ~ 1-20 rad/s.
 const wn = Number(tiles.find((t) => /rad\/s/.test(t))?.replace(/[^\d.]/g, ''));
 const tau = Number(details.match(/τ = ([-\d.]+) s/)?.[1]);
 if (!(wn > 0.1 && wn < 100)) fail(`natural frequency ${wn} rad/s is not physically plausible (unit mismatch?)`);

@@ -96,6 +96,8 @@ function drawDetail() {
   const D = t.discrete.D2;
   const n = plottedSpectrum.length;
 
+  // Both models on the same frequency grid as the measurement, so the plot
+  // shows how well each reproduces it.
   plotFrequencyResponse(freqGraph, {
     sampled: plottedSpectrum,
     firstOrder: firstOrderMagnitudeResponse(t.discrete.P11, n),

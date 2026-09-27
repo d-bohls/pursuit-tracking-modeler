@@ -70,6 +70,11 @@ export function clearPlot(canvas: HTMLCanvasElement) {
   prepare(canvas, chromeOf(canvas).surface);
 }
 
+/**
+ * Overlays the measured frequency response and both fitted models on one
+ * axis, over w = 0..2*pi. It is a goodness-of-fit picture, not just a
+ * spectrum.
+ */
 export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: FrequencyPlotSeries) {
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);
@@ -77,6 +82,10 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   const n = series.sampled.length;
   if (n < 2) return;
 
+  // Auto-scale from the sampled and second-order curves
+  // (yMax = max(1, peaks) * 1.2). The first-order curve is deliberately left
+  // out of the scaling: it can blow up at low frequency for a pole near 1 and
+  // would otherwise flatten everything else.
   let yMax = 1;
   for (let i = 0; i < n; i++) {
     if (series.sampled[i] > yMax) yMax = series.sampled[i];

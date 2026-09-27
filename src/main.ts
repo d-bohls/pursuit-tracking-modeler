@@ -202,9 +202,8 @@ function renderState(state: ExperimentState) {
 }
 
 /**
- * The model's legend entry follows what is actually DRAWN. It used to follow
- * the mode instead, so the moment a replay ended the entry vanished while its
- * dashed line was still sitting on the plot.
+ * The model's legend entry follows what is actually DRAWN, not the mode, so
+ * it stays while a finished replay's line is still on the plot.
  */
 function syncLegend() {
   legendYou.textContent = plotSource === 'none' ? 'You' : 'Model (tracking)';
@@ -249,8 +248,8 @@ function syncAnalysis() {
   const raw = splitStepResponses(xs, ys);
 
   // The previous run stays on screen until this one has something to replace
-  // it WITH. Pressing Record used to blank the readout instantly, so a run
-  // that turned out to be a misfire took the last good analysis with it.
+  // it WITH, so a run that turns out to be a misfire does not take the last
+  // good analysis with it.
   if (live && raw.length > 0) clearAnalysis(pendingSamplePeriodMs, pendingSource);
 
   if (raw.length <= responses.length) {
@@ -369,10 +368,8 @@ function renderFilmstrip() {
     const pct = errorPctOf(t);
 
     // The card holds two SIBLING controls: a checkbox that includes the step response
-    // in the model, and a button that inspects it. They used to be one button
-    // with the checkbox nested inside, which is invalid -- a button may not
-    // contain interactive content -- and left the two fighting over clicks
-    // and tab order.
+    // in the model, and a button that inspects it. A button may not contain
+    // interactive content, so they are siblings rather than nested.
     const card = document.createElement('div');
     card.className = 'response-card';
     card.dataset.excluded = String(excluded.has(i));
@@ -630,7 +627,7 @@ function persistAnalysis() {
   void safely(() => updateSession(currentSessionId!, { excluded: [...excluded], summary: summarize() }));
 }
 
-/** Puts samples on screen and identifies them, as an import or an opened recording. */
+/** Puts samples on screen and identifies them, as an import or an opened session. */
 function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number, source: SimulationMode, exclude: number[]) {
   dismissFlash();
   lastSamples = { xs, ys, samplePeriodMs };

@@ -1,8 +1,7 @@
 // Drives the LIVE tracking experiment in a real browser and measures the
-// trace it draws. This exists because the analysis pipeline can be perfect
-// while the plot is unreadable -- the first version of onScrollTick drew the
-// canvas onto itself with 'source-over' compositing, so old frames never
-// scrolled away and the plot accumulated into a smear.
+// trace it draws. The analysis can be perfect while the plot is unreadable:
+// a canvas scrolled by drawing it onto itself with 'source-over' compositing
+// never erases old frames, and the plot accumulates into a smear.
 //
 // Two properties are asserted, matching the two halves of that failure:
 //   1. the trace SCROLLS   -- inked width tracks elapsed time * scroll rate

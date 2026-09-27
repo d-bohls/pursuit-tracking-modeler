@@ -64,11 +64,13 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source }: R
     `Median of ${included.length} step response${included.length === 1 ? '' : 's'}` +
     (excludedCount > 0 ? ` · ${excludedCount} excluded` : '');
 
-  // The lede is what the numbers MEAN about the person. 2% settling time of a
-  // second-order system. It runs away as zeta -> 0, and a "settles in 740 s" note
-  // is worse than no note at all, so a barely damped fit says so instead of quoting
-  // a number nobody should believe. Overdamped, the response settles at the pace of
-  // its SLOWER real pole, ωn(ζ - √(ζ²-1)), not at ζωn, which would flatter it.
+  // The lede is what the numbers MEAN about the person. H(s) is the evidence,
+  // and sits below.
+  // 2% settling time of a second-order system. It runs away as zeta -> 0, and
+  // a "settles in 740 s" note is worse than no note at all, so a barely damped
+  // fit says so instead of quoting a number nobody should believe.
+  // Overdamped, the response settles at the pace of its SLOWER real pole,
+  // ωn(ζ - √(ζ²-1)), not at ζωn, which would flatter it.
   const decay = zeta > 1 ? wn * (zeta - Math.sqrt(zeta * zeta - 1)) : zeta * wn;
   const settlingS = decay > 0 ? 4 / decay : Infinity;
   const settlingNote =

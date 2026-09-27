@@ -12,9 +12,8 @@
  */
 
 :root {
-  /* One plot height at every width. The desktop shell and the stacked layout
-   * used to size it separately (38vh against 44vh), so crossing 1040px made
-   * the plot jump in height for no reason. The floor is what the resting
+  /* One plot height at every width, so crossing a layout breakpoint never
+   * makes the plot jump in height. The floor is what the resting
    * plot has to hold: legend, the centred button column, and the help at the
    * foot, without the help running into Replay on a short phone. */
   --stage-height: max(330px, 38vh);
@@ -36,8 +35,7 @@
 
   --series-target: #2a78d6;
   --series-you: #eb6834;
-  /* Dark enough to carry a line on colour alone: the old #1baf7a sat at 2.7:1
-   * on the plot, and had to be dashed to be told apart. This is 3.7:1. */
+  /* Dark enough to carry a line on colour alone: 3.7:1 on the plot. */
   --series-model: #15946a;
 
   --critical: #d03b3b;
@@ -722,26 +720,6 @@ button.primary[data-recording="true"] {
 .pole-readout { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; min-height: 30px; }
 .pole-readout p { margin: 0; font-size: 0.72rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .pole-readout button { padding: 4px 8px; font-size: 0.72rem; flex: none; }
-
-/* -------------------------------------------------------------- drawers */
-
-.drawers { display: flex; flex-direction: column; gap: 8px; }
-
-.drawer {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-.drawer > summary {
-  cursor: pointer;
-  padding: 10px 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-.drawer > summary:focus-visible { outline: 2px solid var(--series-target); outline-offset: -2px; }
-.drawer-body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 12px; }
-.drawer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 16px; align-items: end; }
 
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; }
 .field > span { font-weight: 600; color: var(--ink-2); }

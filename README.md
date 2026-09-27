@@ -55,8 +55,8 @@ npm run validate    # print the engine's analysis of the reference recording
 
 `npm test` type-checks the app, then runs:
 
-- `model-check`: the 2-pole closed form matches the difference equation, and
-  the fitter recovers known parameters.
+- `model-check`: the fitters recover known 1-pole and 2-pole models from
+  their own simulated responses.
 - `damping-check`: critically damped and overdamped responses are named as
   such.
 - `smoke-test`: loads the reference recording in a real browser and checks the

@@ -1,73 +1,48 @@
-// Checks the second-order closed-form impulse response used by the curve
-// fitter against the difference equation the UI actually prints, by running
-// that difference equation as a recursion and comparing sample by sample.
-//
-// This exists because the delay offset in the 2-pole model (n - (D-1)) looks
-// like an off-by-one next to the 1-pole model (n - D), and it is worth being
-// able to settle that question mechanically instead of by eye.
+// The fitters must recover a model from its own response. Simulates known
+// 1-pole and 2-pole models (complex, critical and overdamped) driven by a
+// step, fits the result, and checks the poles and delay come back.
 //
 //   npx tsx test/model-check.ts
 
-import { fit2PoleTimeDomain } from '../src/engine/curveFit';
+import { fit1PoleOutputError, fit2PoleOutputError, simulateFirstOrder, simulateSecondOrder } from '../src/engine/curveFit';
 
-const P1 = 0.8;
-const P2 = 0.3;
-const D = 5;
-const N = 40;
+// A step of 100 units after 3 samples at rest, like a recorded step response.
+const N = 60;
+const step = Float64Array.from({ length: N }, (_, n) => (n < 3 ? 0 : 100));
 
-const gain = 1 - 2 * P1 + P1 * P1 + P2 * P2;
-
-// Ground truth: the printed difference equation
-//   y[n] - 2*p1*y[n-1] + (p1^2+p2^2)*y[n-2] = gain * x[n-D]
-// driven by an impulse x[n] = delta[n], so the forcing term fires at n = D.
-const truth = new Float64Array(N);
-for (let n = 0; n < N; n++) {
-  const y1 = n >= 1 ? truth[n - 1] : 0;
-  const y2 = n >= 2 ? truth[n - 2] : 0;
-  const forcing = n === D ? gain : 0;
-  truth[n] = 2 * P1 * y1 - (P1 * P1 + P2 * P2) * y2 + forcing;
-}
-
-// The closed form, parameterized by which delay offset it uses.
-function closedForm(offset: number): Float64Array {
-  const r = Math.sqrt(P1 * P1 + P2 * P2);
-  const theta = Math.acos(P1 / r);
-  const out = new Float64Array(N);
-  for (let n = 0; n < N; n++) {
-    const k = n - offset;
-    out[n] = k < 0 ? 0 : (gain * Math.pow(r, k) * Math.sin(theta * k)) / P2;
-  }
-  return out;
-}
-
-const maxAbsDiff = (a: Float64Array, b: Float64Array) => {
-  let m = 0;
-  for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i]));
-  return m;
+let failed = false;
+const check = (label: string, ok: boolean, detail: string) => {
+  console.log(`${ok ? 'ok  ' : 'FAIL'}  ${label}: ${detail}`);
+  if (!ok) failed = true;
 };
+const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
 
-const asShipped = closedForm(D - 1);
-const proposed = closedForm(D);
-
-console.log(`Second-order model check: p1=${P1}, p2=${P2}, D=${D}, gain=${gain.toFixed(4)}\n`);
-console.log('n     difference eqn   closed form n-(D-1)   closed form n-D');
-for (let n = 0; n < 10; n++) {
-  console.log(
-    `${String(n).padStart(2)}  ${truth[n].toFixed(6).padStart(14)}  ${asShipped[n].toFixed(6).padStart(18)}  ${proposed[n].toFixed(6).padStart(16)}`,
-  );
+{
+  const p = 0.7;
+  const D = 4;
+  const fit = fit1PoleOutputError(step, simulateFirstOrder(step, p, D));
+  check('1-pole', near(fit.p, p, 0.002) && fit.D === D, `p=${fit.p.toFixed(3)} D=${fit.D} (built with p=${p} D=${D})`);
 }
 
-const errShipped = maxAbsDiff(truth, asShipped);
-const errProposed = maxAbsDiff(truth, proposed);
-console.log(`\nmax |difference eqn - closed form|`);
-console.log(`  offset n-(D-1)  : ${errShipped.toExponential(3)}`);
-console.log(`  offset n-D      : ${errProposed.toExponential(3)}`);
+for (const [label, p1, p2, D] of [
+  ['2-pole, underdamped', 0.8, 0.3, 5],
+  ['2-pole, critically damped', 0.6, 0, 3],
+  ['2-pole, overdamped', 0.6, -0.2, 6],
+] as const) {
+  const fit = fit2PoleOutputError(step, simulateSecondOrder(step, p1, p2, D));
+  const ok = near(fit.p1, p1, 0.005) && near(fit.p2, p2, 0.005) && fit.D === D;
+  check(label, ok, `p1=${fit.p1.toFixed(3)} p2=${fit.p2.toFixed(3)} D=${fit.D} (built with p1=${p1} p2=${p2} D=${D})`);
+}
 
-// And does the fitter recover the delay the difference equation was built with?
-const fit = fit2PoleTimeDomain(truth);
-console.log(`\nfit of the ground-truth response: p1=${fit.p1.toFixed(3)}, p2=${fit.p2.toFixed(3)}, D=${fit.D}`);
-console.log(`  (built with p1=${P1}, p2=${P2}, D=${D})`);
+// Unity DC gain: the response settles on the step it was given.
+{
+  const y = simulateSecondOrder(Float64Array.from({ length: 400 }, () => 100), 0.8, 0.3, 5);
+  check('2-pole, unity gain', near(y[y.length - 1], 100, 1e-6), `settles at ${y[y.length - 1].toFixed(6)}`);
+}
 
-const verdict = errShipped < 1e-9 ? 'n-(D-1) is correct' : errProposed < 1e-9 ? 'n-D is correct' : 'NEITHER matches';
-console.log(`\nverdict: ${verdict}`);
-if (errShipped > 1e-9 && errProposed > 1e-9) process.exitCode = 1;
+if (failed) {
+  console.error('\nModel check FAILED');
+  process.exitCode = 1;
+} else {
+  console.log('\nModel check passed: the fitters recover every model from its own response.');
+}

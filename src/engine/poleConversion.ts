@@ -22,7 +22,7 @@ export function discretePoleToContinuous(dr: number, di: number, tsSeconds: numb
   if (dr === 0) {
     ci = (di < 0 ? -1 : 1) * (Math.PI / 2 / tsSeconds);
   } else {
-    ci = Math.atan2(di, dr) / tsSeconds;
+    ci = Math.atan2(di, dr) / tsSeconds; // atan2, not atan(di/dr), which loses the quadrant when dr < 0
   }
   return { cr, ci };
 }
@@ -34,6 +34,13 @@ export function discretePoleToContinuous(dr: number, di: number, tsSeconds: numb
 //   p2 > 0   a complex pair, p1 +/- j*p2 -- underdamped
 //   p2 = 0   a double real pole at p1   -- critically damped
 //   p2 < 0   two real poles, p1 +/- |p2| -- overdamped
+//
+// With only the first case, an overdamped response would collapse to the
+// nearest complex pair and report zeta just under 1 -- "underdamped" --
+// however carefully it avoided overshoot. A signed p2 keeps one continuous
+// knob through critical damping, so step responses can still be averaged and
+// medianed parameter by parameter. The same convention holds in continuous
+// time: (cr, ci) with ci < 0 means the real poles cr +/- |ci|.
 
 /** Product of the pair: the y[n-2] coefficient of the recursion, and |z|^2 for a complex pair. */
 export function pairProduct(p1: number, p2: number): number {

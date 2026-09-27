@@ -4,12 +4,8 @@
 export interface StepResponse {
   /** Target position x[n], time-shifted so the step response starts at 0. */
   xn: Float64Array;
-  /** Operator (mouse) position y[n], time-shifted so the step response starts at 0. */
+  /** Operator (pointer) position y[n], time-shifted so the step response starts at 0. */
   yn: Float64Array;
-  /** Deconvolved impulse response h[n] (populated by calculateImpulseResponse). */
-  hn?: Float64Array;
-  /** DFT of h[n] (populated by calculateImpulseResponse). */
-  Hk?: ComplexArray;
 }
 
 export interface ComplexArray {

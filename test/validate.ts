@@ -1,3 +1,6 @@
+// Replays the reference recording (test/data/reference-data.txt) through the
+// engine and prints the per-response and aggregate models.
+// Run with `npm run validate`.
 
 import { readFileSync } from 'node:fs';
 import { parseSessionFile } from '../src/engine/dataFormat';
@@ -8,7 +11,7 @@ const text = readFileSync(path, 'utf-8');
 const { xs, ys } = parseSessionFile(text);
 console.log(`Loaded ${xs.length} raw samples from ${path}`);
 
-const SAMPLE_PERIOD_MS = 100;
+const SAMPLE_PERIOD_MS = 100; // the reference recording's sample period
 
 const result = analyzeExperiment(xs, ys, SAMPLE_PERIOD_MS);
 console.log(`Parsed into ${result.responses.length} responses.\n`);

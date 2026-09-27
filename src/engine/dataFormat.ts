@@ -10,11 +10,10 @@ export interface RawSamples {
 
 /**
  * Parses the tab-separated `n / x[n] / y[n]` table shown in the Samples pane.
- * That pane is selectable text, so this is the format you get by copying a
- * recording straight out of the running app -- worth supporting, since before
- * the Save button existed it was the only way to rescue a run.
+ * That pane is selectable text, so a run copied straight out of the app can
+ * be imported too.
  */
-export function parseSamplesTable(text: string): RawSamples {
+function parseSamplesTable(text: string): RawSamples {
   const xs: number[] = [];
   const ys: number[] = [];
   for (const line of text.split(/\r?\n/)) {
@@ -34,7 +33,7 @@ export function parseSessionFile(text: string): RawSamples {
   return /All Samples/.test(text) ? parseAllSamplesBlock(text) : parseSamplesTable(text);
 }
 
-export function parseAllSamplesBlock(fileText: string): RawSamples {
+function parseAllSamplesBlock(fileText: string): RawSamples {
   const match = fileText.match(/=+\s*All Samples\s*=+\s*xs=\[([^\]]*)\];\s*ys=\[([^\]]*)\];/);
   if (!match) {
     throw new Error('This file has no "All Samples" block');
@@ -50,7 +49,7 @@ export function parseAllSamplesBlock(fileText: string): RawSamples {
   return { xs: parseList(match[1]), ys: parseList(match[2]) };
 }
 
-/** Writes a file compatible with parseAllSamplesBlock, for exporting a new recording. */
+/** Writes a file compatible with parseAllSamplesBlock, for exporting a session. */
 export function formatAllSamplesBlock(xs: Float64Array, ys: Float64Array): string {
   const round = (v: number) => Math.round(v * 1000) / 1000;
   const fmt = (arr: Float64Array) => Array.from(arr, round).join(',');

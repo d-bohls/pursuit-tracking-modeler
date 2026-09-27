@@ -1,3 +1,7 @@
+// The session store: every session kept in the browser's IndexedDB, so a
+// reload or a new session never throws the last one away, and runs can be
+// compared (mouse vs trackpad, fresh vs tired).
+//
 // Samples are stored as Float64Arrays, which IndexedDB keeps natively. A run
 // is ~440 samples, a few KB, so storage is not a concern for hundreds of runs.
 
@@ -82,7 +86,7 @@ export function hashSamples(xs: Float64Array, ys: Float64Array): string {
   return `${xs.length}:${h.toString(16)}`;
 }
 
-/** Every recording, newest first. */
+/** Every session, newest first. */
 export async function listSessions(): Promise<Session[]> {
   const all = await request<Session[]>('readonly', (s) => s.getAll());
   return all.sort((a, b) => b.createdAt - a.createdAt);
@@ -122,7 +126,7 @@ export async function deleteSession(id: number): Promise<void> {
 }
 
 /**
- * Which recording is open, remembered so a reload reopens THAT one rather
+ * Which session is open, remembered so a reload reopens THAT one rather
  * than whichever is newest. Browser storage: losing it only means the newest
  * is reopened instead, so a failure is ignored.
  */

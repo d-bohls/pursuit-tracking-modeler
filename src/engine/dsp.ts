@@ -2,6 +2,10 @@
 
 import type { ComplexArray } from './types';
 
+/**
+ * Discrete Fourier Transform.
+ *   X[k] = sum_{n=0}^{N-1} x[n] * exp(-j*2*pi*k*n/N)
+ */
 export function dft(x: Float64Array): ComplexArray {
   const N = x.length;
   const real = new Float64Array(N);
@@ -24,6 +28,10 @@ export function dft(x: Float64Array): ComplexArray {
   return { real, imag };
 }
 
+/**
+ * Deconvolve x[n] * h[n] = y[n] for h[n]. Requires x[0] != 0; otherwise h is
+ * all zeros, rather than throwing on a degenerate step response.
+ */
 export function deconvolve(x: Float64Array, y: Float64Array): Float64Array {
   const n = Math.min(x.length, y.length);
   const h = new Float64Array(n);

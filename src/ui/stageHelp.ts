@@ -17,8 +17,8 @@ const replayBtn = $<HTMLButtonElement>('replayBtn');
  * True where the primary input cannot hover and is coarse -- a touchscreen.
  * The copy follows this, while the BEHAVIOUR follows each event's own
  * pointerType, so a hybrid machine reads touch wording and still works with
- * its mouse. Live, not read once: it used to be fixed at load, so switching
- * a browser into device mode kept telling a finger to press Space.
+ * its mouse. Live, not read once, so it follows a browser switched into
+ * device mode.
  */
 const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
 export const isTouchFirst = () => touchQuery.matches;

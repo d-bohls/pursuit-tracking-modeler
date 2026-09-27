@@ -54,7 +54,7 @@ await page.locator('#fileInput').setInputFiles(dataPath);
 await page.waitForTimeout(1500);
 if (!/already in your sessions/.test(await status())) fail(`second import not recognised: "${await status()}"`);
 await openList();
-if ((await rows().count()) !== 1) fail(`expected 1 recording after importing twice, got ${await rows().count()}`);
+if ((await rows().count()) !== 1) fail(`expected 1 session after importing twice, got ${await rows().count()}`);
 
 // 3. a note and an unticked step response stay with the session across a reload
 await page.locator('.session-note').first().fill('mouse, evening');
@@ -66,7 +66,7 @@ await page.waitForTimeout(400);
 await page.reload();
 await page.waitForTimeout(2500);
 if (!/^Reopened mouse, evening/.test(await status())) fail(`not restored after reload: "${await status()}"`);
-if ((await page.locator('.response-card').count()) !== 10) fail('restored recording lost its responses');
+if ((await page.locator('.response-card').count()) !== 10) fail('restored session lost its responses');
 if (JSON.stringify(await unticked()) !== '[2]') fail(`unticked responses not restored: ${JSON.stringify(await unticked())}`);
 await openList();
 if ((await page.locator('.session-note').first().inputValue()) !== 'mouse, evening') fail('note not restored');
@@ -89,7 +89,7 @@ for (let i = 0; i < 16; i++) {
 await page.keyboard.press('Space');
 await page.waitForTimeout(800);
 await openList();
-if ((await rows().count()) !== 2) fail(`expected 2 recordings after a run, got ${await rows().count()}`);
+if ((await rows().count()) !== 2) fail(`expected 2 sessions after a run, got ${await rows().count()}`);
 const current = await rows().evaluateAll((lis) => lis.map((li) => li.getAttribute('aria-current')));
 if (JSON.stringify(current) !== '["true","false"]') fail(`newest run should be the open one: ${JSON.stringify(current)}`);
 if (!/^Today/.test((await rows().first().locator('.session-when').textContent()) ?? '')) fail('row is not dated today');
@@ -115,8 +115,8 @@ if ((await rows().first().locator('.session-note').inputValue()) !== 'quick one'
 await rows().nth(1).locator('.session-open').click();
 await page.waitForTimeout(1500);
 if (!/^Opened the session/.test(await status())) fail(`did not open: "${await status()}"`);
-if ((await page.locator('.response-card').count()) !== 10) fail('reopened recording has the wrong responses');
-if (JSON.stringify(await unticked()) !== '[2]') fail('reopened recording lost its unticked response');
+if ((await page.locator('.response-card').count()) !== 10) fail('reopened session has the wrong responses');
+if (JSON.stringify(await unticked()) !== '[2]') fail('reopened session lost its unticked response');
 // Opening selects in place: the list stays up, with the selection moved.
 if (!(await page.locator('#sessionsDialog').isVisible())) fail('opening a session closed the list');
 const moved = await rows().evaluateAll((lis) => lis.map((li) => li.getAttribute('aria-current')));
@@ -127,7 +127,7 @@ await closeList();
 await page.reload();
 await page.waitForTimeout(2500);
 if (!/^Reopened mouse, evening/.test(await status())) fail(`reload did not reopen the selected session: "${await status()}"`);
-if ((await page.locator('.response-card').count()) !== 10) fail('reload reopened the wrong recording');
+if ((await page.locator('.response-card').count()) !== 10) fail('reload reopened the wrong session');
 
 // 6. delete takes two presses
 await openList();

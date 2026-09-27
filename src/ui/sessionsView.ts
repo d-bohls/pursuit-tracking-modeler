@@ -95,7 +95,7 @@ saveDataBtn.addEventListener('click', () => {
 function rowButton(cls: string, text: string, label: string, onClick: () => void) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = `${cls} ghost`;
+  b.className = cls;
   b.textContent = text;
   b.setAttribute('aria-label', label);
   b.addEventListener('click', onClick);
@@ -162,7 +162,7 @@ export async function renderSessions() {
     openBtn.addEventListener('click', () => {
       if (ctx.isRunning()) return;
       ctx.open(session);
-      // The dialog stays open, so recordings can be stepped through; only the
+      // The dialog stays open, so sessions can be stepped through; only the
       // selection moves. The run that was on screen unsaved is gone now.
       for (const row of sessionList.children) {
         row.setAttribute('aria-current', String(row === li));
@@ -202,7 +202,7 @@ export async function renderSessions() {
     // undone, and a list of similar rows is an easy place to misclick.
     const del = document.createElement('button');
     del.type = 'button';
-    del.className = 'session-delete ghost';
+    del.className = 'session-delete';
     del.textContent = 'Delete';
     del.setAttribute('aria-label', `Delete the session from ${whenLabel(session.createdAt)}`);
     del.addEventListener('click', async () => {

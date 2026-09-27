@@ -33,8 +33,11 @@ export interface ResponseAggregate {
   averageDiscrete: DiscreteModelParams;
   averageContinuous: ContinuousModelParams;
   /**
-   * Median of the per-response parameters. The median is reported alongside so the
-   * pull is visible rather than silently baked into one number.
+   * Median of the per-response parameters. The mean has no defence against a
+   * degenerate step response: on the reference recording two of ten fit ~10x
+   * worse than the rest and report a 1-sample delay against the others' 7-9,
+   * dragging the mean damping ratio from ~0.12 to 0.16. The median is what the
+   * app reports.
    */
   medianDiscrete: DiscreteModelParams;
   medianContinuous: ContinuousModelParams;
@@ -159,12 +162,12 @@ export function analyzeExperiment(rawXs: Float64Array, rawYs: Float64Array, samp
   return { responses, ...aggregateResponses(responses, samplePeriodMs) };
 }
 
-/** e.g. */
+/** e.g. "y[n]-(0.7234)y[n-1]=(0.2766)x[n-3]" */
 export function firstOrderDifferenceEquation(d: DiscreteModelParams, decimals = 4): string {
   return `y[n]-(${d.P11.toFixed(decimals)})y[n-1]=(${(1 - d.P11).toFixed(decimals)})x[n-${d.D1}]`;
 }
 
-/** e.g. */
+/** e.g. "y[n]-(1.4)y[n-1]+(0.53)y[n-2]=(0.13)x[n-5]" */
 export function secondOrderDifferenceEquation(d: DiscreteModelParams, decimals = 4): string {
   const a2 = pairProduct(d.P21, d.P22);
   const gain = 1 - 2 * d.P21 + a2;
@@ -194,8 +197,10 @@ export function dampingMetrics(c: ContinuousModelParams) {
 }
 
 /**
- * Magnitude response |H(e^jw)| of the identified FIRST-ORDER model, evaluated on
- * the same w = 2*pi*k/N grid as the DFT so it can be overlaid on it.
+ * Magnitude response |H(e^jw)| of the identified FIRST-ORDER model, evaluated
+ * on the same w = 2*pi*k/N grid as the DFT so it can be overlaid on it.
+ *   H(z) = (1-p) / (1 - p*z^-1)
+ * (The pure delay is omitted: it has unit magnitude and only shifts phase.)
  */
 export function firstOrderMagnitudeResponse(P11: number, n: number): Float64Array {
   const out = new Float64Array(n);
@@ -208,6 +213,7 @@ export function firstOrderMagnitudeResponse(P11: number, n: number): Float64Arra
 
 /**
  * Magnitude response of the identified SECOND-ORDER model on the same grid.
+ *   H(z) = gain / (1 - 2*p1*z^-1 + (p1^2+p2^2)*z^-2),  gain = 1 - 2*p1 + p1^2 + p2^2
  */
 export function secondOrderMagnitudeResponse(P21: number, P22: number, n: number): Float64Array {
   const out = new Float64Array(n);

@@ -1,8 +1,16 @@
-// Splitting a recording at each step, and padding the pieces to a common
+// Splitting a recording into step responses, and padding them to a common
 // length.
 
 import type { StepResponse } from './types';
 
+/**
+ * Split a raw (xs, ys) sample stream into step responses at each step change,
+ * time-shifting each so it starts at 0: both x and y are measured from the
+ * target's level just before the step.
+ *
+ * `xs`/`ys` are the samples as recorded; the last one is treated as partial
+ * and dropped.
+ */
 /**
  * Where the recording splits: 0, then the index of every sample at which the
  * target has just stepped. Step response k runs from indices[k] to indices[k + 1]; the
@@ -10,6 +18,7 @@ import type { StepResponse } from './types';
  * Shared by splitStepResponses and responseLeadIns so the two can never disagree.
  */
 function stepIndices(xs: Float64Array, ys: Float64Array): number[] {
+  // The last buffered sample may be partial, so it is dropped.
   const ns = Math.min(xs.length, ys.length) - 1;
   if (ns < 1) return [];
   const indices: number[] = [0];
@@ -41,7 +50,7 @@ export function splitStepResponses(xs: Float64Array, ys: Float64Array): StepResp
 /**
  * Pad each step response to 10x its original length by repeating its final sample,
  * so every step response (and thus every deconvolved h[n]) has a common length for
- * curve fitting. Fixed to pad yn with yn's own tail (see file header).
+ * curve fitting. Each of x and y is padded with its own final value.
  */
 export function padResponses(responses: StepResponse[], factor = 10): StepResponse[] {
   return responses.map(({ xn, yn }) => {

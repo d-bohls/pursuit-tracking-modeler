@@ -2,11 +2,9 @@
 // of known pole pairs through the real per-response analysis and checks the
 // damping it reports.
 //
-// The bug this guards: the second-order fit only searched COMPLEX pole pairs
-// and the label tested zeta === 1 exactly, so a perfectly critically damped
-// response came back "underdamped" (zeta 0.9999...), and an overdamped one
-// could not be represented at all -- it collapsed to zeta ~ 1, also labelled
-// "underdamped".
+// A fit that only searched complex pole pairs, or a label that tested
+// zeta === 1 exactly, would call a critically damped response "underdamped"
+// (zeta 0.9999...) and could not represent an overdamped one at all.
 //
 //   npx tsx test/damping-check.ts
 

@@ -58,7 +58,7 @@
     </section>
 
     <main class="deck">
-      <article class="card session-card">
+      <article class="card">
         <header class="card-head split-head">
           <!-- The open session's name rides in the heading: the step responses below
                belong to it, and with several kept nothing else says which.
@@ -104,7 +104,7 @@
                 aria-label="Second-order pole pair. Drag it, or use the arrow keys, to see how the model's response changes. Escape returns it to the fit."></canvas>
               <div class="pole-readout">
                 <p id="poleReadout"></p>
-                <button type="button" id="poleResetBtn" class="ghost" hidden>Back to the fit</button>
+                <button type="button" id="poleResetBtn" hidden>Back to the fit</button>
               </div>
             </figure>
           </div>
@@ -136,15 +136,15 @@
            the footer, Done on the right. -->
       <form method="dialog" class="settings-footer">
         <div class="footer-actions">
-          <button type="button" id="loadDataBtn" class="ghost" title="Add a session from a .txt file and open it">Import .txt&hellip;</button>
+          <button type="button" id="loadDataBtn" title="Add a session from a .txt file and open it">Import .txt&hellip;</button>
           <input id="fileInput" type="file" accept=".txt" hidden />
         </div>
         <button class="primary" value="close">Done</button>
       </form>
     </dialog>
 
-    <!-- One recording's samples, opened from its row's Data button. It stacks
-         over Recordings, and Done returns to the list. -->
+    <!-- One session's samples, opened from its row's Data button. It stacks
+         over Sessions, and Done returns to the list. -->
     <dialog id="samplesDialog" class="settings">
       <header class="settings-head">
         <h2 id="samplesTitle">Samples</h2>
@@ -155,7 +155,7 @@
       </div>
       <form method="dialog" class="settings-footer">
         <div class="footer-actions">
-          <button type="button" id="saveDataBtn" class="ghost" title="Save these samples as a .txt file">Export .txt&hellip;</button>
+          <button type="button" id="saveDataBtn" title="Save these samples as a .txt file">Export .txt&hellip;</button>
         </div>
         <button class="primary" value="close">Done</button>
       </form>
@@ -176,7 +176,7 @@
         </div>
         <!-- One slider, 1 to 10 s in half seconds, with a number under every
              whole second; clicking one jumps to it. The unit is in the value box. -->
-        <div class="field pace-field">
+        <div class="field">
           <div class="pace-head">
             <label for="stepPeriod">Average time between steps:</label>
             <output id="stepPeriodOut" for="stepPeriod">4 s</output>
@@ -227,7 +227,7 @@
         </details>
       </div>
       <form method="dialog" class="settings-footer">
-        <button type="button" id="resetSettingsBtn" class="ghost" title="Restore every setting here to its default">Reset to defaults</button>
+        <button type="button" id="resetSettingsBtn" title="Restore every setting here to its default">Reset to defaults</button>
         <button class="primary" value="close">Done</button>
       </form>
     </dialog>

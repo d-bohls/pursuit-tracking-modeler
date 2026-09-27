@@ -2,9 +2,9 @@
 // with REAL touches (Chrome's Input.dispatchTouchEvent), because synthetic
 // PointerEvents cannot take pointer capture and so cannot exercise the path.
 //
-// The bug this guards: pressing Record with a finger started the run on the
-// button's click -- which only fires on the LIFT -- so the lift that should
-// have ended the run began it, and nothing was left on the glass to stop it.
+// A run started on the button's click would start on the LIFT, which should
+// end it, leaving nothing on the glass to stop it; this checks the press
+// starts it.
 //
 //   node test/touch-test.mjs
 

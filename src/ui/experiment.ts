@@ -44,11 +44,12 @@ export interface ExperimentState {
 }
 
 /**
- * This is deliberately NOT the canvas height any more. Tying the recording to
- * the canvas meant a recording's units -- and so its step sizes and its RMS
- * error in "pixels" -- changed with the window size, which makes two
- * recordings from the same person incomparable, and both incomparable with
- * the reference data file. The canvas is now just a viewport onto this fixed space.
+ * The coordinate space target and tracker positions are recorded in.
+ *
+ * Deliberately NOT the canvas height: if a recording's units -- and so its
+ * step sizes and its RMS error in "pixels" -- changed with the window size,
+ * two recordings from the same person would be incomparable. The canvas is a
+ * viewport onto this fixed space.
  */
 export const LOGICAL_HEIGHT = 493;
 
@@ -66,7 +67,7 @@ export const MAX_RESPONSES = 10;
  * the identified delay comes out short. The mean gap is still the period.
  */
 const STEP_JITTER = 0.25;
-const BUFFER_ZONE = 50;
+const BUFFER_ZONE = 50; // guard band the target stays clear of, top and bottom
 /** How much time one full plot width represents. */
 const VISIBLE_MS = 20_000;
 
@@ -82,6 +83,10 @@ const VISIBLE_MS = 20_000;
  */
 const LEAD_ANCHOR = 0.8;
 
+/**
+ * The system the simulation modes play back, held in CONTINUOUS (s-plane)
+ * form so it survives a change of sample period.
+ */
 export interface SimulationModel {
   /** First-order pole, rad/s (negative for a stable, decaying response). */
   P11: number;
@@ -95,12 +100,16 @@ export interface SimulationModel {
   D2: number;
 }
 
+// Starting model, before any identification has been run: a first-order pole
+// at -3.0 rad/s, and the discrete pair (0.8, 0.2) at the default 100 ms period,
+// converted to continuous so it lives in the same units as everything else.
+//
 // Note this demo pole is far more damped than a real tracker: zeta = 0.62,
 // about 8% overshoot. Once you run system identification the model below is
-// replaced by YOUR measured one (see setSimulationModel), which is the whole
-// point of the "simulate a previously identified system" feature.
+// replaced by YOUR measured one (see setSimulationModel), which is what the
+// self-test and Replay play back.
 const seed = discretePoleToContinuous(0.8, 0.2, 0.1);
-export const DEFAULT_SIMULATION_MODEL: SimulationModel = {
+const DEFAULT_SIMULATION_MODEL: SimulationModel = {
   P11: -3.0,
   D1: 0.4,
   P21: seed.cr,
@@ -303,8 +312,8 @@ export class TrackingExperiment {
   }
 
   /**
-   * Point the simulation and the ghost at a system. Without it the simulation is
-   * stuck on the built-in demo pole forever.
+   * Point the simulation and the ghost at a system. Call this with the
+   * identified model so the self-test and Replay play back YOURS. Without it the simulation plays the built-in demo pole forever.
    */
   setSimulationModel(model: SimulationModel) {
     this.simModel = model;
@@ -397,6 +406,11 @@ export class TrackingExperiment {
     this.emitState('recording');
   }
 
+  /**
+   * Re-discretize the simulation model at whatever sample period is in force
+   * now, so changing the sample period keeps the same physical dynamics
+   * instead of silently changing the system.
+   */
   private discretizeModel(periodMs = this.config.samplePeriodMs) {
     const ts = periodMs / 1000;
     const d1 = continuousPoleToDiscrete(this.simModel.P11, 0, ts);
@@ -560,6 +574,8 @@ export class TrackingExperiment {
   private onStepTick() {
     this.stepCount += 1;
     let dy = this.randomInt(this.minDy, this.maxDy);
+    // A fair coin for the direction, so the target random-walks rather than
+    // drifting one way:
     if (this.randomInt(0, 1) === 0) dy = -dy;
     if (this.currentTargetY + dy < this.minY || this.currentTargetY + dy > this.maxY) dy = -dy;
     this.currentTargetY += dy;
