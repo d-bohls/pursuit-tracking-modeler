@@ -2,7 +2,7 @@
 // model -> continuous (Laplace) model.
 
 import { splitStepResponses, padResponses } from './stepResponses';
-import { deconvolve, dft } from './dsp';
+import { deconvolve } from './dsp';
 import { fit1PoleOutputError, fit2PoleOutputError } from './curveFit';
 import { discretePairToContinuous, discretePoleToContinuous, pairNaturalFrequency, pairProduct } from './poleConversion';
 import type { ContinuousModelParams, DiscreteModelParams, StepResponse } from './types';
@@ -169,34 +169,6 @@ export function secondOrderDifferenceEquation(d: DiscreteModelParams, decimals =
   const a2 = pairProduct(d.P21, d.P22);
   const gain = 1 - 2 * d.P21 + a2;
   return `y[n]-(${(2 * d.P21).toFixed(decimals)})y[n-1]+(${a2.toFixed(decimals)})y[n-2]=(${gain.toFixed(decimals)})x[n-${d.D2}]`;
-}
-
-/**
- * Renders the continuous-time (Laplace) model as a standard second-order
- * transfer function H(s) = wn^2 / (s^2 + 2*zeta*wn*s + wn^2) * e^(-D*s),
- * using natural frequency wn and damping ratio zeta derived from the
- * continuous pole location (see analysis notes in README for the derivation).
- * Assumes unity DC gain, matching the discrete model's normalization.
- */
-export function continuousSecondOrderTf(c: ContinuousModelParams, decimals = 4): string {
-  const a = c.P21; // real part of continuous pole (should be negative for a stable, decaying tracker)
-  const wn = pairNaturalFrequency(a, c.P22);
-  const zeta = wn === 0 ? 0 : -a / wn;
-  const delay = c.D2;
-  const delayTerm = delay !== 0 ? ` * e^(-${delay.toFixed(decimals)}s)` : '';
-  return (
-    `H(s) = ${wn.toFixed(decimals)}² / (s² + ${(2 * zeta * wn).toFixed(decimals)}s + ${wn.toFixed(decimals)}²)${delayTerm}\n` +
-    `  natural frequency ωn = ${wn.toFixed(decimals)} rad/s, damping ratio ζ = ${zeta.toFixed(decimals)}` +
-    ` (${dampingCharacter(zeta)})`
-  );
-}
-
-export function continuousFirstOrderTf(c: ContinuousModelParams, decimals = 4): string {
-  const a = c.P11; // continuous pole (negative reciprocal of the time constant, for a stable system)
-  const tau = a === 0 ? Infinity : -1 / a;
-  const delay = c.D1;
-  const delayTerm = delay !== 0 ? ` * e^(-${delay.toFixed(decimals)}s)` : '';
-  return `H(s) = 1 / (${tau.toFixed(decimals)}s + 1)${delayTerm}\n  time constant τ = ${tau.toFixed(decimals)} s`;
 }
 
 /**

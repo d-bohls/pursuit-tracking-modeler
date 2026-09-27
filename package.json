@@ -3,14 +3,16 @@
   "private": true,
   "version": "0.1.0",
   "description": "Record yourself following a stepping target, and get a model of how you respond.",
+  "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22.12"
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "tsc --noEmit && npm run model-check && npm run damping-check && npm run smoke-test && npm run sessions-test && npm run scroll-test && npm run simulation-test && npm run touch-test",
     "validate": "tsx test/validate.ts test/data/reference-data.txt",
     "smoke-test": "node test/smoke-test.mjs",
     "model-check": "tsx test/model-check.ts",
@@ -22,8 +24,8 @@
   },
   "devDependencies": {
     "playwright": "^1.63.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.0"
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
   }
 }

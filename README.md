@@ -74,7 +74,7 @@ same thing at any window size.
 
 ## Running it
 
-**Requires Node 18 or newer** (Vite 5 won't run on anything older).
+**Requires Node 22.12 or newer.**
 
 ```
 npm install
@@ -87,18 +87,7 @@ npm run damping-check    # critically damped and overdamped responses are named 
 
 ### Troubleshooting
 
-If `npm run dev` fails with:
-
-```
-SyntaxError: Unexpected token '??='
-    at Loader.moduleStrategy (internal/modules/esm/translators.js)
-```
-
-your Node is too old — that's Node 14 or earlier choking on the `??=`
-operator, which needs Node 15+. Vite itself needs Node 18+. Install the
-current LTS from https://nodejs.org (or `winget install OpenJS.NodeJS.LTS`),
-open a **new** terminal, confirm with `node --version`, then delete
-`node_modules` and re-run `npm install`.
+Requires Node 22.12 or later.
 
 ### Tests
 
@@ -144,7 +133,7 @@ npm install -D playwright && npx playwright install chromium
 src/
   engine/            pure TypeScript, no DOM dependency, unit-testable in Node
     types.ts         shared data types
-    complex.ts       complex-number helpers (magnitude/phase)
+    complex.ts       complex magnitude
     dsp.ts           DFT and deconvolution
     poleConversion.ts  continuous (s) <-> discrete (z) pole mapping
     stepResponses.ts  splitting a recording into step responses, padding

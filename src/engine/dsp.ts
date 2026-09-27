@@ -38,13 +38,3 @@ export function deconvolve(x: Float64Array, y: Float64Array): Float64Array {
   }
   return h;
 }
-
-export function sumOfSquares(a: Float64Array, b: ArrayLike<number>): number {
-  const n = Math.min(a.length, b.length);
-  let sum = 0;
-  for (let i = 0; i < n; i++) {
-    const d = a[i] - b[i];
-    sum += d * d;
-  }
-  return sum;
-}

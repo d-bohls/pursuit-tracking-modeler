@@ -42,8 +42,3 @@ export interface ContinuousModelParams {
   P22: number;
   D2: number;
 }
-
-export interface Complex {
-  real: number;
-  imag: number;
-}
