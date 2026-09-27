@@ -192,6 +192,22 @@ const darkSurface = await surfaceOf('#freqGraph');
 await page.locator('#settingsDialog button[value="close"]').click();
 if (lightSurface === darkSurface) fail(`plot surface did not follow the theme (both ${lightSurface})`);
 
+// The step interval slider: a number under it jumps there, the arrow keys
+// step by half seconds, and the value survives a reload.
+await page.locator('#settingsBtn').click();
+await page.locator('#paceGroup button[data-pace="7000"]').click();
+await page.locator('#stepPeriod').press('ArrowRight');
+const paceShown = await page.locator('#stepPeriodOut').textContent();
+const paceActive = await page.locator('#paceGroup button[data-active="true"]').count();
+await page.locator('#settingsDialog button[value="close"]').click();
+if (paceShown !== '7.5 s') fail(`slider readout after 7 then ArrowRight: ${paceShown}, expected 7.5 s`);
+if (paceActive !== 0) fail(`a number is highlighted at 7.5 s, between numbers`);
+await page.reload();
+await page.locator('#settingsBtn').click();
+const paceKept = await page.locator('#stepPeriod').inputValue();
+await page.locator('#settingsDialog button[value="close"]').click();
+if (paceKept !== '7.5') fail(`step interval after reload: ${paceKept}, expected 7.5`);
+
 if (consoleErrors.length) fail(`console errors during run: ${consoleErrors.join(' | ')}`);
 
 
@@ -210,4 +226,5 @@ if (process.exitCode) {
   console.log('  - excluding and restoring a response re-derives the model');
   console.log('  - step, frequency, pole and sparkline canvases drew, and follow the theme');
   console.log('  - moving the pole off the fit raises the error, and Escape restores it');
+  console.log('  - the step interval slider sets, steps and remembers its value');
 }

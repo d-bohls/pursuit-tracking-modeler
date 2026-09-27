@@ -63,6 +63,7 @@ const stageFlash = $<HTMLParagraphElement>('stageFlash');
 const recordBtn = $<HTMLButtonElement>('recordBtn');
 const replayBtn = $<HTMLButtonElement>('replayBtn');
 const settingsBtn = $<HTMLButtonElement>('settingsBtn');
+const SETTINGS_TITLE = settingsBtn.title;
 const settingsDialog = $<HTMLDialogElement>('settingsDialog');
 const sessionsDialog = $<HTMLDialogElement>('sessionsDialog');
 const sessionsBtn = $<HTMLButtonElement>('sessionsBtn');
@@ -613,7 +614,9 @@ function updateActionAvailability() {
   const hasRun = !!lastSamples && lastSamples.xs.length >= 2;
   replayBtn.setAttribute('aria-disabled', String(running || !hasRun));
   // The settings would change the sampling under a run that is using it.
-  settingsBtn.disabled = running;
+  // aria-disabled, like Replay, so the tooltip saying why still shows.
+  settingsBtn.setAttribute('aria-disabled', String(running));
+  settingsBtn.title = running ? 'Available when this run stops' : SETTINGS_TITLE;
   replayBtn.title = !hasRun
     ? 'Nothing to replay yet — record a session first, or open one from Sessions'
     : running
@@ -1297,7 +1300,13 @@ replayBtn.addEventListener('click', () => {
   experiment.startReplay(lastSamples.xs, lastSamples.ys, lastSamples.samplePeriodMs);
 });
 
-settingsBtn.addEventListener('click', () => settingsDialog.showModal());
+settingsBtn.addEventListener('click', () => {
+  if (settingsBtn.getAttribute('aria-disabled') === 'true') {
+    statusEl.textContent = settingsBtn.title;
+    return;
+  }
+  settingsDialog.showModal();
+});
 sessionsBtn.addEventListener('click', () => {
   void renderSessions();
   sessionsDialog.showModal();

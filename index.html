@@ -182,7 +182,8 @@
             <output id="stepPeriodOut" for="stepPeriod">4 s</output>
           </div>
           <input id="stepPeriod" type="range" value="4" min="1" max="10" step="0.5" />
-          <div class="pace-marks" id="paceGroup">
+          <!-- Hidden from assistive tech: the slider itself says the value. -->
+          <div class="pace-marks" id="paceGroup" aria-hidden="true">
             <button type="button" data-pace="1000" style="--at: 0.0" tabindex="-1" aria-label="1 second">1</button>
             <button type="button" data-pace="2000" style="--at: 0.1111" tabindex="-1" aria-label="2 seconds">2</button>
             <button type="button" data-pace="3000" style="--at: 0.2222" tabindex="-1" aria-label="3 seconds">3</button>
