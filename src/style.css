@@ -14,8 +14,10 @@
 :root {
   /* One plot height at every width. The desktop shell and the stacked layout
    * used to size it separately (38vh against 44vh), so crossing 1040px made
-   * the plot jump in height for no reason. */
-  --stage-height: max(200px, 38vh);
+   * the plot jump in height for no reason. The floor is what the resting
+   * plot has to hold: legend, the centred button column, and the help at the
+   * foot, without the help running into Replay on a short phone. */
+  --stage-height: max(330px, 38vh);
   color-scheme: light;
 
   --page: #f2f2ef;
@@ -317,103 +319,44 @@ button.primary[data-recording="true"] {
   gap: 8px;
 }
 .stage-actions[hidden] { display: none; }
-.action-row { position: relative; }
 .action-row > button { min-width: 0; width: 100%; pointer-events: auto; }
 /* A touch on Record holds a recording, so the finger will slide from it onto
  * the plot: no scrolling (which would cancel the touch and end the run), and
  * no long-press selection or callout. */
 #recordBtn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 
-/* Callouts: level with their own button and pointing back at it, like a help
- * overlay. They hang off the row rather than joining the column's flow, so
- * the column -- and Record's place on the centre line -- never moves. */
-.callout {
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-  width: max-content;
-  /* roughly the half of the plot to the right of the column, less a margin */
-  max-width: min(420px, calc(50vw - 140px));
-  padding-left: 26px;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  color: var(--ink-2);
-  pointer-events: none;
-}
-/* the leader line */
-.callout::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 50%;
-  width: 16px;
-  height: 1px;
-  background: var(--ink-muted);
-}
-/* the arrowhead, pointing back at the button */
-.callout::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-right: 6px solid var(--ink-muted);
-  transform: translateY(-50%);
-}
-.callout:empty { display: none; }
 
-/* Two plot hints share one placement: at the foot of the plot, full width.
- * On a wide plot the idle one is replaced by the callouts above, and the
- * running one moves up beside where the buttons were. */
-.stage-hint,
-.stage-running-hint {
+/* The plot's one line of help, at the foot of the plot. */
+.stage-guide {
   position: absolute;
-  left: 16px;
-  right: 16px;
+  left: 50%;
   bottom: 10px;
-  margin: 0 auto;
-  width: fit-content;
-  max-width: min(520px, 100%);
-  padding: 0 0 0 18px;
+  transform: translateX(-50%);
+  margin: 0;
+  width: max-content;
+  /* Centred on the plot but never reaching the pen at 80%: a centred block
+   * stays clear of it while its half-width is under 30% of the plot. */
+  max-width: min(420px, calc(60% - 24px));
+  padding: 4px 10px 4px 26px;
   list-style: disc;
   text-align: left;
   font-size: 0.78rem;
   line-height: 1.4;
   color: var(--ink-muted);
+  /* Help, not content: a light backing over the trace so the lines still
+   * show through, and the words a step quieter than the muted ink. */
+  opacity: 0.8;
+  background: color-mix(in srgb, var(--plot-surface) 55%, transparent);
+  border-radius: 6px;
   pointer-events: none;
 }
-.stage-hint li + li,
-.stage-running-hint li + li { margin-top: 3px; }
-/* Explicit: an author display on a list would otherwise beat the UA's
- * [hidden] rule, the way it did for the legend entries. */
-.stage-hint[hidden],
-.stage-running-hint[hidden] { display: none; }
+.stage-guide li + li { margin-top: 3px; }
+.stage-guide:empty { display: none; }
+/* At rest nothing is drawn at the pen, so the help may use the width. */
+.stage[data-resting="true"] .stage-guide { max-width: min(520px, calc(100% - 32px)); }
 
-/* Narrow: no room beside the column, so the callouts give way to the list. */
-@media (max-width: 639px) {
-  .callout { display: none; }
-}
-
-@media (min-width: 640px) {
-  .stage-hint { display: none; }
-  .stage-running-hint {
-    left: calc(50% + (var(--actions-width) / 2) + 16px);
-    right: 24px;
-    bottom: auto;
-    top: 50%;
-    transform: translateY(-50%);
-    margin: 0;
-    width: auto;
-    max-width: none;
-  }
-}
-
-/* Said once, loudly, then gone: confirmation that the run ended and what it
- * produced, without leaving anything on screen to dismiss. */
+/* The end-of-run result: what the run produced, until something moves on
+ * from it. Nothing to dismiss -- any button, or the next run, does that. */
 .stage-flash {
   position: absolute;
   left: 16px;
@@ -617,6 +560,15 @@ button.primary[data-recording="true"] {
 
 .details-line { margin: 10px 0 0; font-size: 0.78rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .details-line code { font-family: ui-monospace, Consolas, monospace; font-size: 0.95em; overflow-wrap: anywhere; }
+
+/* A faint rule between the card's text sections: summary, continuous,
+ * discrete, first-order fit. The flag keeps its own box, so no rule. */
+.readout-text > .model,
+.readout-text > .details-line {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
 
 .flag {
   margin: 12px 0 0;

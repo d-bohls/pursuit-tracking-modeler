@@ -22,7 +22,7 @@ const app = await serve();
 
 const RUN_MS = 6000;
 const VISIBLE_MS = 20_000; // must match VISIBLE_MS in src/ui/experiment.ts
-const LEAD_ANCHOR = 0.5; // must match LEAD_ANCHOR in src/ui/experiment.ts
+const LEAD_ANCHOR = 0.8; // must match LEAD_ANCHOR in src/ui/experiment.ts
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });

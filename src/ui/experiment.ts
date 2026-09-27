@@ -76,10 +76,11 @@ const VISIBLE_MS = 20_000;
  * the trace scrolls immediately instead of sweeping across an empty canvas
  * and only starting to scroll on reaching the right edge.
  *
- * At the midpoint this also lines up with the Record button, which sits in
- * the centre of the plot: the pen starts under the pointer that started it.
+ * At 0.8 the plot shows 16 of its 20 seconds as history, where the midpoint
+ * showed 10, and the strip to the right keeps the pen's marks and each new
+ * step clear of the frame -- at the very edge both would be cut in half.
  */
-const LEAD_ANCHOR = 0.5;
+const LEAD_ANCHOR = 0.8;
 
 export interface SimulationModel {
   /** First-order pole, rad/s (negative for a stable, decaying response). */

@@ -57,11 +57,8 @@ const legendYou = $<HTMLSpanElement>('legendYou');
 const statusEl = $<HTMLParagraphElement>('status');
 const stageActions = $<HTMLDivElement>('stageActions');
 const stageEl = $<HTMLElement>('stage');
-const stageHint = $<HTMLUListElement>('stageHint');
-const recordCallout = $<HTMLSpanElement>('recordCallout');
-const replayCallout = $<HTMLSpanElement>('replayCallout');
 const stageChrome = document.querySelector('.stage-chrome') as HTMLDivElement;
-const runHint = $<HTMLUListElement>('runHint');
+const stageGuide = $<HTMLUListElement>('stageGuide');
 const stageFlash = $<HTMLParagraphElement>('stageFlash');
 const recordBtn = $<HTMLButtonElement>('recordBtn');
 const replayBtn = $<HTMLButtonElement>('replayBtn');
@@ -322,6 +319,7 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
     // went with it still saw the previous recording -- or none at all. Re-check
     // now that there is something to replay.
     updateActionAvailability();
+    renderGuide('finished');
     // Announced from here rather than from renderState: only now are the
     // finished run's trials counted, and onEnd fires for recordings only, so
     // a replay never claims to have recorded anything.
@@ -398,24 +396,7 @@ function renderState(state: ExperimentState) {
   // plot is the thing to look at, so they get out of the way.
   stageActions.hidden = running;
   stageEl.dataset.resting = String(!running);
-  stageHint.hidden = running;
-  runHint.hidden = !running;
-  if (recording && runMode !== 'none') {
-    // Nothing for the hand to do: the model is the one tracking.
-    setList(runHint, [
-      `The ${modelName(runMode)} is tracking the target, not you`,
-      touchFirst ? 'Tap the plot to stop the run' : 'Click the plot or press Space to stop',
-    ]);
-  } else if (recording) {
-    setList(runHint, [
-      touchFirst
-        ? "Slide your finger up and down to match the target's height"
-        : "Move your pointer up and down to match the target's height",
-      touchFirst ? 'Lift your finger to stop recording' : 'Click the plot or press Space to stop',
-    ]);
-  } else if (replaying) {
-    setList(runHint, [touchFirst ? 'Tap the plot to stop the replay' : 'Click the plot or press Space to stop']);
-  }
+  renderGuide(state.phase);
   statusEl.dataset.recording = String(recording);
   updateActionAvailability();
   syncLegend();
@@ -437,10 +418,6 @@ function renderState(state: ExperimentState) {
     // A finished RECORDING gets its line from onEnd instead, which runs a
     // moment later and is the only place the run's trials have been counted.
     if (previousPhase === 'replaying') statusEl.textContent = 'Replay finished';
-    setGuide(
-      touchFirst ? 'Hold Record or the plot to record again; lift to stop' : RECORD_AGAIN,
-      'Replay shows that run again with the model overlaid',
-    );
   } else {
     statusEl.textContent = 'Ready';
   }
@@ -460,20 +437,24 @@ function elapsed(ms: number): string {
   return `${mins}:${(total - mins * 60).toFixed(1).padStart(4, '0')}`;
 }
 
-/** The resting guide for Record once there is a run on screen to replace. */
-const RECORD_AGAIN = 'Record starts a new run, replacing this one';
-
 const trialCount = (n: number) => `${n} trial${n === 1 ? '' : 's'}`;
 
 /**
  * True where the primary input cannot hover and is coarse -- a touchscreen.
  * The copy follows this, while the BEHAVIOUR follows each event's own
  * pointerType, so a hybrid machine reads touch wording and still works with
- * its mouse.
+ * its mouse. Live, not read once: it used to be fixed at load, so switching
+ * a browser into device mode kept telling a finger to press Space.
  */
-const touchFirst = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+const touchQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
+let touchFirst = touchQuery.matches;
+touchQuery.addEventListener('change', () => {
+  touchFirst = touchQuery.matches;
+  renderGuide(experiment.getPhase());
+  renderTrialCount();
+});
 
-/** Fills a hint list. Both plot hints are lists, so both go through here. */
+/** Fills a list with one item per line of text. */
 function setList(list: HTMLUListElement, items: string[]) {
   list.innerHTML = '';
   for (const text of items) {
@@ -484,14 +465,41 @@ function setList(list: HTMLUListElement, items: string[]) {
 }
 
 /**
- * The resting directions. A wide plot shows them as callouts beside their own
- * buttons, a narrow one as the list under the buttons; both are kept current
- * so a resize never shows stale text.
+ * The plot's one line of help. At rest it says what the buttons do; while a
+ * run is going, what to do and how to stop. Worked out from the state each
+ * time rather than set piecemeal, so it can never describe a moment that has
+ * passed -- or a keyboard to someone holding a phone.
  */
-function setGuide(record: string, replay: string) {
-  recordCallout.textContent = record;
-  replayCallout.textContent = replay;
-  setList(stageHint, [record, replay]);
+function renderGuide(phase: ExperimentState['phase']) {
+  let items: string[];
+  if (phase === 'recording' && runMode !== 'none') {
+    // Nothing for the hand to do: the model is the one tracking.
+    items = [
+      `The ${modelName(runMode)} is tracking the target, not you`,
+      touchFirst ? 'Tap the plot to stop the run' : 'Click the plot or press Space to stop',
+    ];
+  } else if (phase === 'recording') {
+    items = [
+      touchFirst
+        ? "Slide your finger up and down to match the target's height"
+        : "Move your pointer up and down to match the target's height",
+      touchFirst ? 'Lift your finger to stop recording' : 'Click the plot or press Space to stop',
+    ];
+  } else if (phase === 'replaying') {
+    items = [touchFirst ? 'Tap the plot to stop the replay' : 'Click the plot or press Space to stop'];
+  } else {
+    const again = !!lastSamples;
+    items = [
+      touchFirst
+        ? `Hold Record or the plot to record${again ? ' again' : ''}; lift to stop`
+        : again
+          ? 'Record starts a new run, replacing this one'
+          : 'Record tracks your pointer height',
+      'Replay shows the last run again with the model overlaid',
+    ];
+    if (!touchFirst) items.push('Space starts or stops a run');
+  }
+  setList(stageGuide, items);
 }
 
 /**
@@ -672,7 +680,7 @@ function renderReadout() {
   const byModel = analysisSource !== 'none' && trials.length > 0;
   readoutHeading.textContent = byModel
     ? `${modelName(analysisSource).replace(/^./, (c) => c.toUpperCase())} · self-test`
-    : 'Your tracking system';
+    : 'Your model';
   readoutHeading.parentElement!.parentElement!.dataset.source = byModel ? 'model' : 'you';
 
   const included = includedTrials();
@@ -1174,10 +1182,6 @@ recordBtn.addEventListener('click', (e) => {
   if (!trailing) startRecording();
 });
 
-if (touchFirst) {
-  setGuide('Hold Record or the plot to record; lift to stop', 'Replay shows the last run again with the model overlaid');
-}
-
 // Replay plays back the run that is already on screen -- your target, your
 // response, and the identified model's response to the same target. It is a
 // playback, so nothing is recorded and the analysis is left alone.
@@ -1419,10 +1423,7 @@ function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number,
   syncLegend();
   syncAnalysis();
   updateActionAvailability();
-  setGuide(
-    touchFirst ? 'Hold Record or the plot to record; lift to stop' : RECORD_AGAIN,
-    'Replay shows this recording with the model overlaid',
-  );
+  renderGuide(experiment.getPhase());
 }
 
 function showRecording(rec: Recording, status: string) {
@@ -1532,7 +1533,12 @@ async function renderLibrary() {
     openBtn.addEventListener('click', () => {
       if (experiment.isActive()) return;
       showRecording(rec, `Opened the recording from ${whenLabel(rec.createdAt)}`);
-      dataDialog.close();
+      // The dialog stays open, so recordings can be stepped through; only the
+      // selection moves. The run that was on screen unsaved is gone now.
+      for (const row of libraryList.children) {
+        row.setAttribute('aria-current', String(row === li));
+      }
+      libraryList.querySelector('[data-unsaved]')?.remove();
     });
 
     // Saved as you type, a moment after you stop; no Save button to forget.
@@ -1619,4 +1625,5 @@ renderResults();
 // Otherwise Replay starts life dimmed with no tooltip to explain why: the
 // availability pass only runs on a state change, and none has happened yet.
 updateActionAvailability();
+renderGuide('idle');
 void restoreLatest();

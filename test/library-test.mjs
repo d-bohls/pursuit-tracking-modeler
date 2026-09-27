@@ -105,6 +105,11 @@ await page.waitForTimeout(1500);
 if (!/^Opened the recording/.test(await status())) fail(`did not open: "${await status()}"`);
 if ((await page.locator('.trial-card').count()) !== 10) fail('reopened recording has the wrong trials');
 if (JSON.stringify(await unticked()) !== '[2]') fail('reopened recording lost its unticked trial');
+// Opening selects in place: the list stays up, with the selection moved.
+if (!(await page.locator('#dataDialog').isVisible())) fail('opening a recording closed the list');
+const moved = await rows().evaluateAll((lis) => lis.map((li) => li.getAttribute('aria-current')));
+if (JSON.stringify(moved) !== '["false","true"]') fail(`selection did not move to the opened row: ${JSON.stringify(moved)}`);
+await closeList();
 
 // 5b. a reload reopens the recording that was open -- the older one -- not the newest
 await page.reload();

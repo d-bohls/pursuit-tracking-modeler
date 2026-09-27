@@ -94,15 +94,8 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   const xAt = (k: number) => marginL + (k / (n - 1)) * plotW;
   const yAt = (v: number) => marginT + plotH - (Math.min(v, yMax) / yMax) * plotH;
 
-  // gridline at |H| = 1 (unity gain) -- the line a well-tracked step sits on
-  ctx.strokeStyle = c.grid;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(marginL, yAt(1));
-  ctx.lineTo(width - marginR, yAt(1));
-  ctx.stroke();
-
   ctx.strokeStyle = c.axis;
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(marginL, marginT);
   ctx.lineTo(marginL, marginT + plotH);
@@ -149,6 +142,15 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
 
   // Grey, not the target's blue: the two share the key above the plots, and
   // one colour meaning two things there would be a lie in one of them.
+  // The target: |H| = 1 at every frequency, which is what perfect tracking
+  // would give. In the target's blue, so the shared key holds on this plot too.
+  ctx.strokeStyle = c.target;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(marginL, yAt(1));
+  ctx.lineTo(width - marginR, yAt(1));
+  ctx.stroke();
+
   drawSeries(series.firstOrder, c.muted, 2, [5, 4]);
   drawSeries(series.secondOrder, c.second, 2, []);
   drawSeries(series.sampled, c.measured, 2, []);

@@ -39,29 +39,21 @@
         <div class="action-row">
           <button type="button" id="settingsBtn" title="Theme, trial pace, sample period and display">Settings</button>
         </div>
-        <!-- Each callout is tied to its row, so it sits level with its own
-             button and points at it -- a help overlay rather than a caption. -->
         <div class="action-row">
-          <button type="button" id="recordBtn" class="primary" aria-describedby="recordCallout" title="Record a new run — track the target with your pointer (Space starts and stops too)">Record</button>
-          <span class="callout" id="recordCallout">Record tracks your pointer height</span>
+          <button type="button" id="recordBtn" class="primary" aria-describedby="stageGuide" title="Record a new run — track the target with your pointer (Space starts and stops too)">Record</button>
         </div>
         <div class="action-row">
           <!-- aria-disabled rather than disabled: a truly disabled control gets
                no pointer events in Chrome, so its tooltip -- the one explaining
                why it is unavailable -- would never appear. -->
-          <button type="button" id="replayBtn" aria-disabled="true" aria-describedby="replayCallout">Replay</button>
-          <span class="callout" id="replayCallout">Replay shows the last run again with the model overlaid</span>
+          <button type="button" id="replayBtn" aria-disabled="true" aria-describedby="stageGuide">Replay</button>
         </div>
       </div>
-      <!-- Lives in the empty half of the plot: the pen is anchored at the
-           midpoint, so nothing is ever drawn to the right of it. -->
-      <ul class="stage-running-hint" id="runHint" hidden></ul>
+      <!-- One line of help, always at the bottom centre: what the buttons do
+           while they are up, what to do while a run is going. Over past trace
+           rather than at the pen, where you are looking while you track. -->
+      <ul class="stage-guide" id="stageGuide"></ul>
       <p class="stage-flash" id="stageFlash" hidden></p>
-
-      <ul class="stage-hint" id="stageHint">
-        <li>Record tracks your pointer height</li>
-        <li>Replay shows the last run again with the model overlaid</li>
-      </ul>
     </section>
 
     <main class="deck">
@@ -96,11 +88,11 @@
           </header>
           <div class="plots">
             <figure class="step-figure">
-              <figcaption>Step response &mdash; measured vs model</figcaption>
+              <figcaption>Step response</figcaption>
               <canvas id="stepGraph"></canvas>
             </figure>
             <figure class="freq-figure">
-              <figcaption>Frequency response &mdash; measured vs fitted models</figcaption>
+              <figcaption>Frequency response</figcaption>
               <canvas id="freqGraph"></canvas>
             </figure>
             <figure class="pole-figure">
@@ -118,7 +110,7 @@
 
       <article class="card readout-card">
         <header class="card-head">
-          <h2 id="readoutHeading">Your tracking system</h2>
+          <h2 id="readoutHeading">Your model</h2>
           <p class="card-note" id="readoutSource">No trials yet</p>
         </header>
         <div id="readout" class="readout">
