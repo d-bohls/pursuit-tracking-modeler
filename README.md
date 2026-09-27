@@ -101,6 +101,7 @@ src/
     labels.ts          shared wording and formatting
     dom.ts             small DOM helpers
   main.ts              the app's state, wiring the pieces together
+public/                the favicon and the iOS home-screen icon
 test/                  the checks and tests above, and serve.mjs, which
                        builds and serves the app for them
   data/                a real recording, used by the tests

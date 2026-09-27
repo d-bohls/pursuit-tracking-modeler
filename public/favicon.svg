@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- A step (the target) and a delayed response that overshoots once and
+       settles: what the app records and models. Colours follow the plot's. -->
+  <style>
+    .card { fill: #ffffff; stroke: #c3c2b7; }
+    .target { stroke: #2a78d6; }
+    .you { stroke: #eb6834; }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #1f1f1e; stroke: #383835; }
+      .target { stroke: #3987e5; }
+      .you { stroke: #d95926; }
+    }
+  </style>
+  <rect class="card" x="1.5" y="1.5" width="29" height="29" rx="7" stroke-width="1"/>
+  <g fill="none" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round">
+    <path class="target" d="M5 23 H10 V11 H27"/>
+    <path class="you" d="M10.5 23 H13.5 C16.5 23 16 5.5 19 5.5 C21.5 5.5 21.5 11 27 11"/>
+  </g>
+</svg>
