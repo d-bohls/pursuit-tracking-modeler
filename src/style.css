@@ -118,10 +118,12 @@ body {
   position: sticky;
   top: 0;
   z-index: 5;
-  display: flex;
-  flex-wrap: wrap;
+  /* The app-wide buttons centred on the window, the title to their left.
+   * Equal side columns keep them centred; the title's never shrinks below
+   * the title, so where it would not fit the buttons give way to the right. */
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 14px 0 12px;
   background: var(--page);
@@ -130,7 +132,11 @@ body {
 
 .brand h1 { margin: 0; font-size: 1.15rem; letter-spacing: -0.01em; }
 
-.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+/* A phone has no room beside the title: the buttons take a row of their own. */
+@media (max-width: 519px) {
+  .topbar { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
 
 button {
   font: inherit;
@@ -155,6 +161,14 @@ button.primary {
   border-color: var(--ink);
   min-width: 9.5rem;
 }
+/* Record sits on the plot, so it is tinted rather than solid: the red dot and
+ * a warm edge make it the one to press without a black slab over the trace. */
+button.primary#recordBtn {
+  background: color-mix(in srgb, var(--critical) 8%, var(--card));
+  border-color: color-mix(in srgb, var(--critical) 45%, var(--line-strong));
+  color: var(--ink);
+}
+button.primary#recordBtn:hover { border-color: var(--critical); }
 button.primary[data-recording="true"] {
   background: var(--critical);
   border-color: var(--critical);
@@ -467,11 +481,28 @@ button.primary[data-recording="true"] {
 /* A long note must not push the centred instruction off its centre: the name
  * is cut to fit its column, and the full text is in the tooltip. */
 .trials-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#recordingSep,
 #recordingName { font-weight: 500; color: var(--ink-muted); }
+/* The name is its own rename control: a quiet underline on hover says so. */
+#recordingName { cursor: pointer; border-radius: 4px; }
+#recordingName:hover { color: var(--ink-2); text-decoration: underline dotted; text-underline-offset: 3px; }
+#recordingName:focus-visible { outline: 2px solid var(--series-target); outline-offset: 1px; }
+#recordingNameInput {
+  font: inherit;
+  font-weight: 500;
+  width: calc(100% - 7.5em);
+  min-width: 8em;
+  margin: 0;
+  padding: 0 4px;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
 
-/* A tape recorder's red dot: says "record" before the word is read, and keeps
- * the button dark -- a red button would read as the danger it means elsewhere
- * (stopping a run, confirming a delete). */
+/* A tape recorder's red dot: says "record" before the word is read. The
+ * button itself is only tinted -- a solid red one would read as the danger
+ * red means elsewhere (stopping a run, confirming a delete). */
 #recordBtn::before {
   content: "";
   display: inline-block;
@@ -712,6 +743,9 @@ dialog.settings {
   background: var(--card);
   color: var(--ink);
 }
+/* One column of controls since the two period fields stacked: sized to the
+ * widest of them, the trial-pace buttons. */
+#settingsDialog { width: min(360px, calc(100vw - 32px)); }
 dialog.settings::backdrop { background: rgba(0, 0, 0, 0.45); }
 /* Header and footer stay put and the body scrolls, so Done is always in reach
  * on a short screen. */
@@ -816,8 +850,6 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
 }
 /* Done stays on the right even when it wraps under the other actions. */
 .settings-footer > button[value="close"] { margin-left: auto; min-width: 5.5rem; }
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }

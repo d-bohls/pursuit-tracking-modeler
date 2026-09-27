@@ -12,6 +12,10 @@
       <div class="brand">
         <h1>Pursuit Tracking Modeler</h1>
       </div>
+      <div class="topbar-actions">
+        <button type="button" id="dataBtn" title="Every run you have recorded, plus import and export">Recordings</button>
+        <button type="button" id="settingsBtn" title="Theme, trial pace, sample period and display">Settings</button>
+      </div>
 
     </header>
 
@@ -37,9 +41,6 @@
            starting position the instant Record is clicked. -->
       <div class="stage-actions" id="stageActions">
         <div class="action-row">
-          <button type="button" id="settingsBtn" title="Theme, trial pace, sample period and display">Settings</button>
-        </div>
-        <div class="action-row">
           <button type="button" id="recordBtn" class="primary" aria-describedby="stageGuide" title="Record a new run — track the target with your pointer (Space starts and stops too)">Record</button>
         </div>
         <div class="action-row">
@@ -60,19 +61,21 @@
       <article class="card trials-card">
         <header class="card-head split-head">
           <!-- The open recording's name rides in the heading: the trials below
-               belong to it, and with several kept nothing else says which. -->
-          <h2 class="trials-title">Trials<span id="recordingName"></span></h2>
-          <div class="card-note trial-notes">
-            <p id="trialCountNote">No trials yet</p>
+               belong to it, and with several kept nothing else says which.
+               Click it to rename the recording in place. -->
+          <h2 class="trials-title">Recording<span id="recordingSep" hidden> · </span><span id="recordingName" role="button" tabindex="0" hidden></span><input id="recordingNameInput" type="text" maxlength="120" aria-label="Name this recording" hidden /></h2>
+          <div class="card-note trial-notes" hidden>
+            <p id="trialCountNote"></p>
             <p>Untick a trial to leave it out of the model</p>
           </div>
-          <button type="button" id="dataBtn" class="ghost" title="Every run you have recorded, plus import and export">Recordings&hellip;</button>
         </header>
         <div id="filmstrip" class="filmstrip">
           <p class="empty">Trials appear here as you record, one per step.</p>
         </div>
 
-        <div class="trial-detail">
+        <!-- Hidden until there is a trial to show: empty plot frames say
+             nothing, and they were most of the card's height. -->
+        <div class="trial-detail" id="trialDetail" hidden>
           <header class="card-head split-head">
             <h3 id="trialDetailHeading">Trial details</h3>
             <!-- One key for all three plots, outside them, so no line is ever
@@ -111,7 +114,7 @@
       <article class="card readout-card">
         <header class="card-head">
           <h2 id="readoutHeading">Your model</h2>
-          <p class="card-note" id="readoutSource">No trials yet</p>
+          <p class="card-note" id="readoutSource"></p>
         </header>
         <div id="readout" class="readout">
           <p class="empty">Record a few steps and your identified model appears here, updating as each trial completes.</p>
@@ -179,16 +182,14 @@
             <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow &middot; 8&nbsp;s</button>
           </div>
         </div>
-        <div class="settings-grid">
-          <label class="field">
-            <span>Average time between steps (ms)</span>
-            <input id="trialPeriod" type="number" value="4000" min="1000" max="10000" step="100" />
-          </label>
-          <label class="field">
-            <span>Sample period (ms)</span>
-            <input id="samplePeriod" type="number" value="100" min="50" max="500" step="10" />
-          </label>
-        </div>
+        <label class="field">
+          <span>Average time between steps (ms)</span>
+          <input id="trialPeriod" type="number" value="4000" min="1000" max="10000" step="100" />
+        </label>
+        <label class="field">
+          <span>Sample period (ms)</span>
+          <input id="samplePeriod" type="number" value="100" min="50" max="500" step="10" />
+        </label>
         <label class="check">
           <input id="discretePoints" type="checkbox" />
           <span>Draw samples as dots, not lines</span>

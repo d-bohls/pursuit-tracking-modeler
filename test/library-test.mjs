@@ -70,7 +70,7 @@ if ((await page.locator('.trial-card').count()) !== 10) fail('restored recording
 if (JSON.stringify(await unticked()) !== '[2]') fail(`unticked trials not restored: ${JSON.stringify(await unticked())}`);
 await openList();
 if ((await page.locator('.rec-note').first().inputValue()) !== 'mouse, evening') fail('note not restored');
-if (!/Trials · mouse, evening/.test((await page.locator('.trials-title').textContent()) ?? '')) {
+if (!/Recording · mouse, evening/.test((await page.locator('.trials-title').textContent()) ?? '')) {
   fail(`Trials heading does not name the recording: "${await page.locator('.trials-title').textContent()}"`);
 }
 await closeList();
@@ -95,9 +95,21 @@ if (JSON.stringify(current) !== '["true","false"]') fail(`newest run should be t
 if (!/^Today/.test((await rows().first().locator('.rec-when').textContent()) ?? '')) fail('row is not dated today');
 if ((await rows().first().locator('.rec-who').textContent()) !== 'You') fail('a run of yours is not labelled "You"');
 // No note yet, so the heading falls back to when it was recorded.
-if (!/^Trials · Today/.test((await page.locator('.trials-title').textContent()) ?? '')) {
+if (!/^Recording · Today/.test((await page.locator('.trials-title').textContent()) ?? '')) {
   fail(`an unnamed run is not headed by its time: "${await page.locator('.trials-title').textContent()}"`);
 }
+await closeList();
+
+// 4b. renaming it from the heading saves it as the recording's note
+await page.locator('#recordingName').click();
+await page.locator('#recordingNameInput').fill('quick one');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(300);
+if ((await page.locator('.trials-title').textContent()) !== 'Recording · quick one') {
+  fail(`rename did not show: "${await page.locator('.trials-title').textContent()}"`);
+}
+await openList();
+if ((await rows().first().locator('.rec-note').inputValue()) !== 'quick one') fail('rename was not saved as the note');
 
 // 5. the older one reopens with its own unticked trial
 await rows().nth(1).locator('.rec-open').click();

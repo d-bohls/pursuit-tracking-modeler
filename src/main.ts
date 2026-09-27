@@ -108,6 +108,8 @@ let trials: TrialAnalysis[] = [];
 /** The stored recording on screen, which notes and unticked trials are saved to. */
 let currentRecordingId: number | null = null;
 const recordingNameEl = $<HTMLSpanElement>('recordingName');
+const recordingSepEl = $<HTMLSpanElement>('recordingSep');
+const recordingNameInput = $<HTMLInputElement>('recordingNameInput');
 
 /**
  * Which recording is open, remembered so a reload reopens THAT one rather
@@ -133,14 +135,82 @@ function rememberedOpen(): number | null {
 }
 
 /**
- * Shows which recording the trials belong to, in the Trials heading. An empty
- * name leaves the heading as plain "Trials": nothing is kept yet, or the
+ * Shows which recording the trials belong to, in the heading over the trials. An empty
+ * name leaves it as plain "Recording": nothing is kept yet, or the
  * trials on screen belong to a run still in progress.
  */
 function setRecordingName(name: string) {
-  recordingNameEl.textContent = name ? ` · ${name}` : '';
-  recordingNameEl.parentElement!.title = name ? `Trials · ${name}` : '';
+  cancelRename();
+  recordingSepEl.hidden = recordingNameEl.hidden = !name;
+  recordingNameEl.textContent = name;
+  recordingNameEl.title = name ? `${name} — click to rename` : '';
+  recordingNameEl.parentElement!.title = name ? `Recording · ${name}` : '';
 }
+
+/*
+ * Renaming in place: the name in the heading turns into a field. What you
+ * type is the recording's note -- the same one the Recordings list edits --
+ * and clearing it falls back to the file name or the time, shown as the
+ * placeholder so you can see what you would get.
+ */
+let renaming: { id: number; rec: Recording } | null = null;
+
+async function startRename() {
+  const id = currentRecordingId;
+  if (id === null || renaming) return;
+  const rec = await safely(() => getRecording(id));
+  if (!rec || id !== currentRecordingId) return;
+  renaming = { id, rec };
+  recordingNameInput.value = rec.note;
+  recordingNameInput.placeholder = recordingName({ ...rec, note: '' });
+  recordingNameEl.hidden = true;
+  recordingNameInput.hidden = false;
+  recordingNameInput.focus();
+  recordingNameInput.select();
+}
+
+function endRename() {
+  renaming = null;
+  recordingNameInput.hidden = true;
+  recordingNameEl.hidden = recordingNameEl.textContent === '';
+}
+
+function cancelRename() {
+  if (renaming) endRename();
+}
+
+function commitRename() {
+  if (!renaming) return;
+  const { id, rec } = renaming;
+  endRename();
+  const note = recordingNameInput.value.trim();
+  if (note === rec.note) return;
+  rec.note = note;
+  void safely(() => updateRecording(id, { note }));
+  if (id === currentRecordingId) setRecordingName(recordingName(rec));
+}
+
+recordingNameEl.addEventListener('click', () => void startRename());
+recordingNameEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    // Space would otherwise reach the page's handler and start a run.
+    e.stopPropagation();
+    void startRename();
+  }
+});
+recordingNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitRename();
+    recordingNameEl.focus();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelRename();
+    recordingNameEl.focus();
+  }
+});
+recordingNameInput.addEventListener('blur', commitRename);
 
 /** Your note if you wrote one, else the file it came from, else when it was made. */
 function recordingName(rec: { note: string; fileName?: string; createdAt: number }): string {
@@ -334,12 +404,12 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
  * Centres the message in the gap between the bottom of the legend/status
  * row and the top of the button column. Measured rather than set as a
  * percentage: the column's top edge moves with the plot's height, and at 25%
- * a short plot put the message across the Settings button.
+ * a short plot put the message across the top button.
  */
 function placeFlash() {
   const stage = stageEl.getBoundingClientRect();
   const above = stageChrome.getBoundingClientRect().bottom;
-  const below = settingsBtn.getBoundingClientRect().top;
+  const below = recordBtn.getBoundingClientRect().top;
   if (stageActions.hidden || below <= above) {
     stageFlash.style.top = '';
     return;
@@ -489,15 +559,19 @@ function renderGuide(phase: ExperimentState['phase']) {
     items = [touchFirst ? 'Tap the plot to stop the replay' : 'Click the plot or press Space to stop'];
   } else {
     const again = !!lastSamples;
+    // In the order of the buttons: Record, with Space beside it as another
+    // way to do the same thing, then Replay.
     items = [
       touchFirst
         ? `Hold Record or the plot to record${again ? ' again' : ''}; lift to stop`
         : again
-          ? 'Record starts a new run, replacing this one'
-          : 'Record tracks your pointer height',
-      'Replay shows the last run again with the model overlaid',
+          ? currentRecordingId !== null
+            ? 'Record a new run; this one stays in Recordings'
+            : 'Record a new run, replacing this one'
+          : 'Record tracks your pointer height as you follow the target',
     ];
-    if (!touchFirst) items.push('Space starts or stops a run');
+    if (!touchFirst) items.push('Space bar also starts and stops a recording');
+    items.push('Replay the last recording with your model overlaid');
   }
   setList(stageGuide, items);
 }
@@ -517,6 +591,8 @@ function updateActionAvailability() {
   const running = experiment.isActive();
   const hasRun = !!lastSamples && lastSamples.xs.length >= 2;
   replayBtn.setAttribute('aria-disabled', String(running || !hasRun));
+  // The settings would change the sampling under a run that is using it.
+  settingsBtn.disabled = running;
   replayBtn.title = !hasRun
     ? 'Nothing to replay yet — record a run first, or open one from Recordings'
     : running
@@ -685,7 +761,7 @@ function renderReadout() {
 
   const included = includedTrials();
   if (included.length === 0) {
-    readoutSource.textContent = trials.length === 0 ? 'No trials yet' : 'All trials excluded';
+    readoutSource.textContent = trials.length === 0 ? '' : 'All trials excluded';
     readoutEl.innerHTML =
       trials.length === 0
         ? '<p class="empty">Record a few steps and your identified model appears here, updating as each trial completes.</p>'
@@ -786,6 +862,7 @@ function leadOf(i: number) {
 }
 
 const trialCountNote = $<HTMLParagraphElement>('trialCountNote');
+const trialDetail = $<HTMLDivElement>('trialDetail');
 
 /**
  * The count lives in the details note rather than a label of its own: the
@@ -795,7 +872,9 @@ const trialCountNote = $<HTMLParagraphElement>('trialCountNote');
 function renderTrialCount() {
   const n = trials.length;
   trialCountNote.textContent =
-    n === 0 ? 'No trials yet' : n === 1 ? '1 trial' : `${n} trials, ${touchFirst ? 'tap' : 'select'} one to see details`;
+    n === 0 ? '' : n === 1 ? '1 trial' : `${n} trials, ${touchFirst ? 'tap' : 'select'} one to see details`;
+  // Nothing to untick or inspect yet.
+  trialCountNote.parentElement!.hidden = trialDetail.hidden = n === 0;
 }
 
 function renderFilmstrip() {
@@ -1403,6 +1482,8 @@ async function keepRecording(
   currentRecordingId = id;
   rememberOpen(id);
   setRecordingName(recordingName({ note: '', fileName, createdAt }));
+  // Kept now, so the guide can say the run will still be there after the next.
+  renderGuide(experiment.getPhase());
   if (dataDialog.open) void renderLibrary();
 }
 
@@ -1431,6 +1512,7 @@ function showRecording(rec: Recording, status: string) {
   currentRecordingId = rec.id;
   rememberOpen(rec.id);
   setRecordingName(recordingName(rec));
+  renderGuide(experiment.getPhase());
   statusEl.textContent = status;
 }
 
@@ -1588,6 +1670,7 @@ async function renderLibrary() {
         currentRecordingId = null;
         rememberOpen(null);
         setRecordingName('');
+        renderGuide(experiment.getPhase());
       }
       void renderLibrary();
     });

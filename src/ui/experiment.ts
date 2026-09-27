@@ -157,6 +157,8 @@ export class TrackingExperiment {
   private ys: number[] = [];
 
   private history: Frame[] = [];
+  /** Columns trimmed off the front of `history`; 0 while its first column is the run's start. */
+  private historyDropped = 0;
   private steppedThisColumn = false;
 
   private active = false;
@@ -369,6 +371,7 @@ export class TrackingExperiment {
     this.xs = [];
     this.ys = [];
     this.history = [];
+    this.historyDropped = 0;
     // onTrialTick raises this and only the next onScrollTick lowers it, so a
     // run stopped inside that 50 ms window leaves it set -- and the next run's
     // first column would be drawn as a trial divider for a step that never
@@ -429,6 +432,7 @@ export class TrackingExperiment {
     this.replayElapsedMs = 0;
     this.trialTimerCount = 0;
     this.history = [];
+    this.historyDropped = 0;
 
     this.discretizeModel(samplePeriodMs);
     this.replayModel = this.modelResponseTo(xs);
@@ -483,8 +487,7 @@ export class TrackingExperiment {
       model: this.currentModelY,
       stepped,
     });
-    const cap = Math.ceil(VISIBLE_MS / this.config.scrollPeriodMs) + 2;
-    if (this.history.length > cap) this.history.splice(0, this.history.length - cap);
+    this.trimHistory();
 
     this.emitState('replaying');
   }
@@ -621,8 +624,16 @@ export class TrackingExperiment {
     });
     this.steppedThisColumn = false;
 
+    this.trimHistory();
+  }
+
+  /** Keeps just enough history to fill the plot. */
+  private trimHistory() {
     const cap = Math.ceil(VISIBLE_MS / this.config.scrollPeriodMs) + 2;
-    if (this.history.length > cap) this.history.splice(0, this.history.length - cap);
+    const excess = this.history.length - cap;
+    if (excess <= 0) return;
+    this.history.splice(0, excess);
+    this.historyDropped += excess;
   }
 
   private startDrawing() {
@@ -681,14 +692,18 @@ export class TrackingExperiment {
     ctx.strokeStyle = this.palette.muted;
     ctx.lineWidth = 1.5 * dpr;
     ctx.setLineDash([5 * dpr, 4 * dpr]);
-    for (let i = start; i < n; i++) {
-      if (!this.history[i].stepped) continue;
-      const x = xAt(i);
+    const divider = (x: number) => {
       ctx.beginPath();
       ctx.moveTo(x, pad);
       ctx.lineTo(x, pad + plotH);
       ctx.stroke();
+    };
+    for (let i = start; i < n; i++) {
+      if (this.history[i].stepped) divider(xAt(i));
     }
+    // And where the run began, until it scrolls off: the edge of the data,
+    // which otherwise just stops in mid-air.
+    if (this.historyDropped === 0 && xAt(0) >= 0) divider(xAt(0));
     ctx.setLineDash([]);
 
     const series = (pick: (f: Frame) => number | null, color: string, lw: number, dash: number[]) => {
