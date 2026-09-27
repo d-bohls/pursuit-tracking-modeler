@@ -1,4 +1,8 @@
-# Tracking Lab
+# Pursuit Tracking Modeler
+
+Record yourself following a stepping target with your pointer, and get a
+model of how you respond: your reaction delay, damping and natural
+frequency, as continuous- and discrete-time transfer functions.
 
 ## What it does
 
