@@ -17,12 +17,24 @@ import {
   poleGeometry,
 } from './ui/plotting';
 import { simulateSecondOrder } from './engine/curveFit';
-import { discretePoleToContinuous } from './engine/poleConversion';
+import {
+  addRecording,
+  deleteRecording,
+  findByHash,
+  getRecording,
+  hashSamples,
+  listRecordings,
+  updateRecording,
+  type Recording,
+  type RecordingSummary,
+} from './ui/library';
+import { discretePairToContinuous, pairProduct } from './engine/poleConversion';
 import {
   analyzeTrial,
   aggregateTrials,
   secondOrderDifferenceEquation,
   dampingMetrics,
+  dampingCharacter,
   firstOrderMagnitudeResponse,
   secondOrderMagnitudeResponse,
   type TrialAnalysis,
@@ -38,6 +50,9 @@ const graphCanvas = $<HTMLCanvasElement>('graph');
 const stepGraph = $<HTMLCanvasElement>('stepGraph');
 const poleReadout = $<HTMLParagraphElement>('poleReadout');
 const poleResetBtn = $<HTMLButtonElement>('poleResetBtn');
+const detailLegend = $<HTMLUListElement>('detailLegend');
+const keyModel = $<HTMLSpanElement>('keyModel');
+const keyFit = $<HTMLLIElement>('keyFit');
 const legendYou = $<HTMLSpanElement>('legendYou');
 const statusEl = $<HTMLParagraphElement>('status');
 const stageActions = $<HTMLDivElement>('stageActions');
@@ -71,12 +86,17 @@ const saveDataBtn = $<HTMLButtonElement>('saveDataBtn');
 const loadDataBtn = $<HTMLButtonElement>('loadDataBtn');
 const fileInput = $<HTMLInputElement>('fileInput');
 const samplesOut = $<HTMLTextAreaElement>('samplesOut');
+const samplesDialog = $<HTMLDialogElement>('samplesDialog');
+const samplesTitle = $<HTMLHeadingElement>('samplesTitle');
+const samplesMeta = $<HTMLParagraphElement>('samplesMeta');
+const libraryList = $<HTMLUListElement>('libraryList');
+const libraryEmpty = $<HTMLParagraphElement>('libraryEmpty');
+const libraryUnavailable = $<HTMLParagraphElement>('libraryUnavailable');
 const simModelInfo = $<HTMLParagraphElement>('simModelInfo');
 
 const trialPeriodInput = $<HTMLInputElement>('trialPeriod');
 const samplePeriodInput = $<HTMLInputElement>('samplePeriod');
 const simulationModeSelect = $<HTMLSelectElement>('simulationMode');
-const showModelCheckbox = $<HTMLInputElement>('showModel');
 const discretePointsCheckbox = $<HTMLInputElement>('discretePoints');
 
 /** The model the simulation and the readout report. See the note in analysis.ts. */
@@ -88,6 +108,48 @@ const SIM_SOURCE: 'mean' | 'median' = 'median';
  * all at once when a data file is loaded.
  */
 let trials: TrialAnalysis[] = [];
+/** The stored recording on screen, which notes and unticked trials are saved to. */
+let currentRecordingId: number | null = null;
+const recordingNameEl = $<HTMLSpanElement>('recordingName');
+
+/**
+ * Which recording is open, remembered so a reload reopens THAT one rather
+ * than whichever is newest. Browser storage: losing it only means the newest
+ * is reopened instead, so a failure is ignored.
+ */
+const OPEN_KEY = 'tracking-lab.openRecording';
+function rememberOpen(id: number | null) {
+  try {
+    if (id === null) localStorage.removeItem(OPEN_KEY);
+    else localStorage.setItem(OPEN_KEY, String(id));
+  } catch {
+    /* the newest is reopened instead */
+  }
+}
+function rememberedOpen(): number | null {
+  try {
+    const id = Number(localStorage.getItem(OPEN_KEY));
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shows which recording the trials belong to, in the Trials heading. An empty
+ * name leaves the heading as plain "Trials": nothing is kept yet, or the
+ * trials on screen belong to a run still in progress.
+ */
+function setRecordingName(name: string) {
+  recordingNameEl.textContent = name ? ` · ${name}` : '';
+  recordingNameEl.parentElement!.title = name ? `Trials · ${name}` : '';
+}
+
+/** Your note if you wrote one, else the file it came from, else when it was made. */
+function recordingName(rec: { note: string; fileName?: string; createdAt: number }): string {
+  return rec.note.trim() || rec.fileName || whenLabel(rec.createdAt);
+}
+
 /** A few samples from before each trial's step, so its thumbnail shows the step. */
 let leadIns: ReturnType<typeof trialLeadIns> = [];
 /** The lead-in is this fraction of the trial, and at least two samples. */
@@ -101,7 +163,8 @@ let inspected = 0;
  * picking the newest again resumes following.
  */
 let followLatest = true;
-let lastSamples: { xs: Float64Array; ys: Float64Array } | null = null;
+/** The samples on screen, and the period they were recorded at -- which paces a replay. */
+let lastSamples: { xs: Float64Array; ys: Float64Array; samplePeriodMs: number } | null = null;
 let identifiedYet = false;
 /** The sample period the trials on screen were identified at. */
 let analysisSamplePeriodMs = 100;
@@ -147,7 +210,6 @@ const DEFAULT_SETTINGS = {
   trialPeriodMs: 4000,
   samplePeriodMs: 100,
   simulationMode: 'none',
-  showModel: false,
   discretePoints: false,
   theme: 'system' as ThemeChoice,
 };
@@ -155,7 +217,6 @@ const DEFAULT_SETTINGS = {
 interface StoredSettings {
   trialPeriodMs?: number;
   samplePeriodMs?: number;
-  showModel?: boolean;
   discretePoints?: boolean;
   theme?: ThemeChoice;
 }
@@ -179,7 +240,6 @@ function saveSettings() {
     const stored: StoredSettings = {
       trialPeriodMs: currentConfig().trialPeriodMs,
       samplePeriodMs: currentConfig().samplePeriodMs,
-      showModel: showModelCheckbox.checked,
       discretePoints: discretePointsCheckbox.checked,
     };
     stored.theme = themeChoice;
@@ -197,7 +257,6 @@ function applyStoredSettings() {
   // The self-test mode is deliberately NOT restored. Left on a model, it
   // would make the next visit's Record a model run -- every session starts
   // with you tracking, and a self-test is something you choose each time.
-  if (typeof s.showModel === 'boolean') showModelCheckbox.checked = s.showModel;
   if (typeof s.discretePoints === 'boolean') discretePointsCheckbox.checked = s.discretePoints;
   // Default to the OS preference. index.html therefore ships with NO
   // data-theme, so the prefers-color-scheme block styles the very first paint
@@ -228,7 +287,6 @@ function currentConfig(): ExperimentConfig {
     scrollPeriodMs: 50,
     simulationMode: simulationModeSelect.value as SimulationMode,
     discretePoints: discretePointsCheckbox.checked,
-    showModel: showModelCheckbox.checked,
   };
 }
 
@@ -248,14 +306,13 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
     const produced = parseTrials(xs, ys).length > 0;
     if (produced) {
       if (pendingReset) clearAnalysis(pendingSamplePeriodMs, pendingSource);
-      lastSamples = { xs, ys };
-      displaySamples(xs, ys);
-      saveDataBtn.disabled = false;
+      lastSamples = { xs, ys, samplePeriodMs: analysisSamplePeriodMs };
     } else {
       // Nothing analysable: throw the run away and keep what was on screen.
       pendingReset = false;
     }
     syncAnalysis();
+    if (produced) void keepRecording(xs, ys, runMode, analysisSamplePeriodMs);
     statusEl.textContent = produced
       ? `${runMode === 'none' ? 'Stopped' : 'Model run stopped'} · ${xs.length} samples · ${trialCount(trials.length)}`
       : xs.length < 2
@@ -275,11 +332,6 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
   },
 });
 
-/** How long the end-of-run message stays up before it starts fading. */
-const FLASH_HOLD_MS = 2400;
-let flashHoldHandle: ReturnType<typeof setTimeout> | null = null;
-let flashHideHandle: ReturnType<typeof setTimeout> | null = null;
-
 /**
  * Centres the message in the gap between the bottom of the legend/status
  * row and the top of the button column. Measured rather than set as a
@@ -297,31 +349,24 @@ function placeFlash() {
   stageFlash.style.top = `${(above + below) / 2 - stage.top}px`;
 }
 
-/** Says one thing, big, across the plot, then fades itself out. */
+/** The end-of-run result, across the plot, until something moves on from it. */
 function flash(message: string) {
-  if (flashHoldHandle) clearTimeout(flashHoldHandle);
-  if (flashHideHandle) clearTimeout(flashHideHandle);
   stageFlash.textContent = message;
   stageFlash.hidden = false;
   placeFlash();
-  stageFlash.dataset.fading = 'false';
-  flashHoldHandle = setTimeout(() => {
-    stageFlash.dataset.fading = 'true';
-    // Outlasts the 600ms opacity transition; under prefers-reduced-motion
-    // there is no transition and this is simply when it disappears.
-    flashHideHandle = setTimeout(() => (stageFlash.hidden = true), 650);
-  }, FLASH_HOLD_MS);
 }
+// It stays up, so it has to follow the layout: the gap it is centred in moves
+// whenever the plot changes size.
+new ResizeObserver(() => {
+  if (!stageFlash.hidden) placeFlash();
+}).observe(stageEl);
 
 /**
- * Takes the message down at once. It is news about the run that just ended,
- * so reaching for any of the buttons means it has been read -- and left up,
- * it would sit over the next run or the settings dialog.
+ * Takes the message down. It is news about the run that just ended, so it
+ * stays until something moves on from that run: a button is reached for, a
+ * run starts, or another recording is opened in its place.
  */
 function dismissFlash() {
-  if (flashHoldHandle) clearTimeout(flashHoldHandle);
-  if (flashHideHandle) clearTimeout(flashHideHandle);
-  flashHoldHandle = flashHideHandle = null;
   stageFlash.hidden = true;
 }
 // Capture phase, so it runs before a button's own handler opens a dialog or
@@ -456,8 +501,7 @@ function setGuide(record: string, replay: string) {
  */
 function syncLegend() {
   legendYou.textContent = plotSource === 'none' ? 'You' : 'Model (tracking)';
-  const drawingModel = showModelCheckbox.checked && simulationModeSelect.value === 'none';
-  legendModel.hidden = !(experiment.hasModelTrace() || experiment.getPhase() === 'replaying' || drawingModel);
+  legendModel.hidden = !(experiment.hasModelTrace() || experiment.getPhase() === 'replaying');
 }
 
 /** Replay needs something to replay, and nothing may run over a live run. */
@@ -466,7 +510,7 @@ function updateActionAvailability() {
   const hasRun = !!lastSamples && lastSamples.xs.length >= 2;
   replayBtn.setAttribute('aria-disabled', String(running || !hasRun));
   replayBtn.title = !hasRun
-    ? 'Nothing to replay yet — record a run first, or open one from Recorded data'
+    ? 'Nothing to replay yet — record a run first, or open one from Recordings'
     : running
       ? 'Available when this run stops'
       : "Replay the last run with the model's response to the same steps overlaid";
@@ -503,8 +547,7 @@ function syncAnalysis() {
     return;
   }
 
-  const longest = raw.reduce((m, t) => Math.max(m, t.xn.length), 0);
-  leadIns = trialLeadIns(xs, ys, Math.max(2, Math.ceil(longest * LEAD_FRACTION)));
+  leadIns = trialLeadIns(xs, ys, LEAD_FRACTION);
   const padded = padTrials(raw, 10);
   for (let i = trials.length; i < raw.length; i++) {
     trials.push(analyzeTrial(raw[i], padded[i], analysisSamplePeriodMs));
@@ -525,6 +568,8 @@ function clearAnalysis(samplePeriodMs: number, source: SimulationMode) {
   trials = [];
   leadIns = [];
   excluded.clear();
+  currentRecordingId = null;
+  setRecordingName('');
   inspected = 0;
   followLatest = true;
   analysisSamplePeriodMs = samplePeriodMs;
@@ -644,7 +689,7 @@ function renderReadout() {
   const c = SIM_SOURCE === 'median' ? agg.medianContinuous : agg.averageContinuous;
   const d = SIM_SOURCE === 'median' ? agg.medianDiscrete : agg.averageDiscrete;
   const { wn, zeta, overshoot } = dampingMetrics(c);
-  const character = zeta < 1 ? 'underdamped' : zeta === 1 ? 'critically damped' : 'overdamped';
+  const character = dampingCharacter(zeta);
   const tau = c.P11 === 0 ? Infinity : -1 / c.P11;
 
   const excludedCount = trials.length - included.length;
@@ -655,8 +700,10 @@ function renderReadout() {
   // The lede is what the numbers MEAN about the person. 2% settling time of a
   // second-order system. It runs away as zeta -> 0, and a "settles in 740 s" note
   // is worse than no note at all, so a barely damped fit says so instead of quoting
-  // a number nobody should believe.
-  const settlingS = zeta > 0 && wn > 0 ? 4 / (zeta * wn) : Infinity;
+  // a number nobody should believe. Overdamped, the response settles at the pace of
+  // its SLOWER real pole, ωn(ζ - √(ζ²-1)), not at ζωn, which would flatter it.
+  const decay = zeta > 1 ? wn * (zeta - Math.sqrt(zeta * zeta - 1)) : zeta * wn;
+  const settlingS = decay > 0 ? 4 / decay : Infinity;
   const settlingNote =
     settlingS <= 30 ? `settles in ~${settlingS.toFixed(1)} s` : 'settles too slowly to quote';
 
@@ -685,7 +732,7 @@ function renderReadout() {
   // recursion the simulation executes. The engine's own string rides along in
   // a data attribute, so a test can hold the display to the engine exactly.
   const a1 = 2 * d.P21;
-  const a2 = d.P21 ** 2 + d.P22 ** 2;
+  const a2 = pairProduct(d.P21, d.P22);
   const b0 = 1 - a1 + a2;
   const num = (v: number) => v.toFixed(3);
   const delay = Number.isInteger(d.D2) ? String(d.D2) : d.D2.toFixed(1);
@@ -725,17 +772,28 @@ function renderReadout() {
     `<div class="readout-text">${verdict}${continuous}${discrete}${details}${flag}</div></div>`;
 }
 
-/** Trial i's lead-in, trimmed to a tenth of that trial's own length. */
+/** Trial i's lead-in: the samples just before its step. */
 function leadOf(i: number) {
-  const lead = leadIns[i];
-  if (!lead) return undefined;
-  const k = Math.max(2, Math.ceil(trials[i].trial.xn.length * LEAD_FRACTION));
-  return { xn: lead.xn.subarray(-k), yn: lead.yn.subarray(-k) };
+  return leadIns[i];
+}
+
+const trialCountNote = $<HTMLParagraphElement>('trialCountNote');
+
+/**
+ * The count lives in the details note rather than a label of its own: the
+ * strip scrolls sideways, so on a narrow screen it is the only way to know how
+ * many trials there are.
+ */
+function renderTrialCount() {
+  const n = trials.length;
+  trialCountNote.textContent =
+    n === 0 ? 'No trials yet' : n === 1 ? '1 trial' : `${n} trials, ${touchFirst ? 'tap' : 'select'} one to see details`;
 }
 
 function renderFilmstrip() {
+  renderTrialCount();
   if (trials.length === 0) {
-    filmstripEl.innerHTML = '<p class="empty">Each completed step becomes a trial here.</p>';
+    filmstripEl.innerHTML = '<p class="empty">Trials appear here as you record, one per step.</p>';
     return;
   }
 
@@ -804,6 +862,7 @@ function renderFilmstrip() {
       card.dataset.excluded = String(excluded.has(i));
       pushModelToSimulation();
       renderReadout();
+      persistAnalysis();
     });
 
     card.append(inspect, box);
@@ -840,6 +899,7 @@ function renderPlots(force = false) {
     }
     poleReadout.textContent = '';
     poleResetBtn.hidden = true;
+    detailLegend.hidden = true;
     return;
   }
   if (t === plottedTrial && !force) return;
@@ -879,7 +939,6 @@ function drawDetail() {
     sampled: plottedSpectrum,
     firstOrder: firstOrderMagnitudeResponse(t.discrete.P11, n),
     secondOrder: secondOrderMagnitudeResponse(pole.p1, pole.p2, n),
-    secondOrderLabel: dragged ? '2nd-order (dragged)' : undefined,
   });
   plotPoleLocations(poleGraph, [pole], dragged ? fit : undefined);
 
@@ -906,42 +965,89 @@ function drawDetail() {
 
   // What the pole MEANS, and what it costs: the error is lowest at the fit,
   // which is the whole point of identification, and dragging lets you see it.
-  const c = discretePoleToContinuous(pole.p1, pole.p2, analysisSamplePeriodMs / 1000);
+  const c = discretePairToContinuous(pole.p1, pole.p2, analysisSamplePeriodMs / 1000);
   const { wn, zeta, overshoot } = dampingMetrics({ P11: 0, D1: 0, P21: c.cr, P22: c.ci, D2: 0 });
   let sq = 0;
   for (let i = 0; i < model.length; i++) sq += (t.trial.yn[i] - model[i]) ** 2;
   const errPct = t.stepSize > 0 ? (Math.sqrt(sq / model.length) / t.stepSize) * 100 : NaN;
   const errText = Number.isFinite(errPct) ? `${errPct < 10 ? errPct.toFixed(1) : errPct.toFixed(0)}% err` : '';
   poleReadout.textContent =
-    `ζ ${zeta.toFixed(2)} · ωn ${wn.toFixed(2)} rad/s · ${overshoot.toFixed(0)}% overshoot` + (errText ? ` · ${errText}` : '');
+    `ζ ${zeta.toFixed(2)} ${dampingCharacter(zeta)} · ωn ${wn.toFixed(2)} rad/s · ${overshoot.toFixed(0)}% overshoot` +
+    (errText ? ` · ${errText}` : '');
   poleResetBtn.hidden = !dragged;
+  detailLegend.hidden = false;
+  keyModel.textContent = dragged ? 'Dragged model' : 'Model';
+  keyFit.hidden = !dragged;
 }
 
-/** Keeps a pole pair strictly inside the unit circle, and on or above the axis. */
+const POLE_MAX = 0.995;
+/** Real poles stay positive: a pole at or below 0 has no continuous equivalent. */
+const POLE_MIN = 0.005;
+
+/**
+ * Keeps a pair stable and meaningful. A complex pair (p2 >= 0) stays inside
+ * the unit circle; a real pair (p2 < 0) keeps both poles on (0, 1).
+ */
 function clampPole(p1: number, p2: number) {
-  const r = Math.hypot(p1, p2);
-  const max = 0.995;
-  if (r > max) {
-    p1 *= max / r;
-    p2 *= max / r;
+  if (p2 >= 0) {
+    const r = Math.hypot(p1, p2);
+    if (r > POLE_MAX) {
+      p1 *= POLE_MAX / r;
+      p2 *= POLE_MAX / r;
+    }
+    return { p1, p2 };
   }
-  return { p1, p2: Math.max(0, p2) };
+  const c = Math.min(POLE_MAX, Math.max(POLE_MIN, p1));
+  const h = Math.min(-p2, c - POLE_MIN, POLE_MAX - c);
+  return { p1: c, p2: -h };
 }
 
-/** The z-plane point under a pointer, folded onto the upper half-plane. */
-function poleAt(e: PointerEvent) {
+/** Within this many pixels of the real axis, a press means the axis itself. */
+const AXIS_SNAP_PX = 6;
+
+/**
+ * How the current drag moves the pair. 'pair': the pointer IS a complex pole
+ * (its mirror follows), snapping to a double pole -- critical damping -- on
+ * the axis, which is otherwise impossible to hit exactly. 'split': one real
+ * pole slides along the axis while the other stays put -- overdamped.
+ */
+let dragMode: { kind: 'pair' } | { kind: 'split'; fixed: number } = { kind: 'pair' };
+
+/** The z-plane point under a pointer, and whether it is on the real axis. */
+function zAt(e: PointerEvent) {
   const rect = poleGraph.getBoundingClientRect();
   const { cx, cy, r } = poleGeometry(rect.width, rect.height);
-  return clampPole((e.clientX - rect.left - cx) / r, Math.abs(cy - (e.clientY - rect.top)) / r);
+  const dy = Math.abs(cy - (e.clientY - rect.top));
+  return { re: (e.clientX - rect.left - cx) / r, im: dy / r, onAxis: dy <= AXIS_SNAP_PX };
+}
+
+function poleAt(e: PointerEvent) {
+  const z = zAt(e);
+  if (dragMode.kind === 'split') {
+    const moving = Math.min(POLE_MAX, Math.max(POLE_MIN, z.re));
+    return clampPole((moving + dragMode.fixed) / 2, -Math.abs(moving - dragMode.fixed) / 2);
+  }
+  return clampPole(z.re, z.onAxis ? 0 : z.im);
 }
 
 // Press anywhere on the plot to pick the pair up: the conjugate is its mirror,
 // so a press below the axis grabs the same pair. Jumping to the press, rather
-// than requiring a hit on the marker, makes it usable with a finger.
+// than requiring a hit on the marker, makes it usable with a finger. A press
+// ON the axis when the pair is already real grabs the nearer real pole
+// instead, and splits the pair.
 poleGraph.addEventListener('pointerdown', (e) => {
   if (!plottedTrial) return;
   poleGraph.setPointerCapture(e.pointerId);
   poleGraph.dataset.dragging = 'true';
+  const current = dragged ?? { p1: plottedTrial.discrete.P21, p2: plottedTrial.discrete.P22 };
+  const z = zAt(e);
+  if (z.onAxis && current.p2 <= 0) {
+    const hi = current.p1 - current.p2;
+    const lo = current.p1 + current.p2;
+    dragMode = { kind: 'split', fixed: Math.abs(z.re - hi) < Math.abs(z.re - lo) ? lo : hi };
+  } else {
+    dragMode = { kind: 'pair' };
+  }
   dragged = poleAt(e);
   drawDetail();
 });
@@ -997,19 +1103,37 @@ for (const canvas of [stepGraph, freqGraph, poleGraph]) plotResizeObserver.obser
 function renderSimModelInfo() {
   const model: SimulationModel = experiment.getSimulationModel();
   const { wn, zeta } = dampingOf(model);
-  const character = zeta < 1 ? 'underdamped' : zeta === 1 ? 'critically damped' : 'overdamped';
+  const character = dampingCharacter(zeta);
   const overshoot = zeta < 1 ? Math.exp((-Math.PI * zeta) / Math.sqrt(1 - zeta * zeta)) * 100 : 0;
   const source = identifiedYet ? 'your identified model' : 'built-in demo model; record a run to replace it';
   simModelInfo.textContent =
     `Model in use: ${source} — ωn ${wn.toFixed(2)} rad/s, ζ ${zeta.toFixed(2)} (${character}, ${overshoot.toFixed(0)}% overshoot)`;
 }
 
-function displaySamples(xs: Float64Array, ys: Float64Array) {
+/** What the Samples dialog is showing, which is what its Export saves. */
+interface SamplesView {
+  xs: Float64Array;
+  ys: Float64Array;
+  samplePeriodMs: number;
+  name: string;
+  createdAt: number;
+}
+let samplesShown: SamplesView | null = null;
+
+/** Opens one recording's samples, over the Recordings list. */
+function openSamples(view: SamplesView) {
+  samplesShown = view;
+  samplesTitle.textContent = `Samples · ${view.name}`;
+  const seconds = (view.xs.length * view.samplePeriodMs) / 1000;
+  samplesMeta.textContent = `${view.xs.length} samples · one every ${view.samplePeriodMs} ms · ${seconds.toFixed(1)} s`;
   const lines = ['n\tx[n]\ty[n]', '======================='];
-  for (let i = 0; i < xs.length; i++) {
-    lines.push(`${i}\t${xs[i].toFixed(3)}\t${ys[i].toFixed(3)}`);
+  for (let i = 0; i < view.xs.length; i++) {
+    lines.push(`${i}\t${view.xs[i].toFixed(3)}\t${view.ys[i].toFixed(3)}`);
   }
   samplesOut.value = lines.join('\n');
+  samplesDialog.showModal();
+  // Replacing the text keeps the old scroll position; a new recording starts at n = 0.
+  samplesOut.scrollTop = 0;
 }
 
 /* --------------------------------------------------------------- controls */
@@ -1040,18 +1164,18 @@ recordBtn.addEventListener('pointerdown', (e) => {
 });
 // A held press is a long press, and Chrome answers those with a context menu.
 for (const el of [recordBtn, graphCanvas]) el.addEventListener('contextmenu', (e) => e.preventDefault());
-recordBtn.addEventListener('click', () => {
+recordBtn.addEventListener('click', (e) => {
   // The click that trails a touch hold would otherwise start a second run.
-  if (touchPressedRecord) {
-    touchPressedRecord = false;
-    return;
-  }
-  startRecording();
+  // It often never arrives -- the pointer was captured to the plot, so the
+  // click lands there -- which leaves the flag set; a keyboard click
+  // (detail 0) is never that trailing click, so it always records.
+  const trailing = touchPressedRecord && e.detail !== 0;
+  touchPressedRecord = false;
+  if (!trailing) startRecording();
 });
 
 if (touchFirst) {
   setGuide('Hold Record or the plot to record; lift to stop', 'Replay shows the last run again with the model overlaid');
-  $<HTMLParagraphElement>('trialDetailNote').textContent = 'Tap a trial to see its details';
 }
 
 // Replay plays back the run that is already on screen -- your target, your
@@ -1062,11 +1186,14 @@ replayBtn.addEventListener('click', () => {
   if (replayBtn.getAttribute('aria-disabled') === 'true') return;
   if (!lastSamples || experiment.isActive()) return;
   plotSource = analysisSource;
-  experiment.startReplay(lastSamples.xs, lastSamples.ys);
+  experiment.startReplay(lastSamples.xs, lastSamples.ys, lastSamples.samplePeriodMs);
 });
 
 settingsBtn.addEventListener('click', () => settingsDialog.showModal());
-dataBtn.addEventListener('click', () => dataDialog.showModal());
+dataBtn.addEventListener('click', () => {
+  void renderLibrary();
+  dataDialog.showModal();
+});
 
 /**
  * Click the backdrop to dismiss. A click on a dialog's ::backdrop is reported
@@ -1085,6 +1212,7 @@ function closeOnBackdropClick(dialog: HTMLDialogElement) {
 
 closeOnBackdropClick(settingsDialog);
 closeOnBackdropClick(dataDialog);
+closeOnBackdropClick(samplesDialog);
 
 document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space') return;
@@ -1092,7 +1220,7 @@ document.addEventListener('keydown', (e) => {
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return;
   if (el instanceof HTMLButtonElement || el instanceof HTMLDetailsElement) return;
   // Space must not start a run behind an open modal.
-  if (settingsDialog.open || dataDialog.open) return;
+  if (settingsDialog.open || dataDialog.open || samplesDialog.open) return;
   e.preventDefault();
   // The space bar is an explicit instruction, unlike a press on the plot, so
   // it stops straight away instead of asking.
@@ -1112,7 +1240,7 @@ paceGroup.addEventListener('click', (e) => {
   saveSettings();
 });
 
-[trialPeriodInput, samplePeriodInput, simulationModeSelect, discretePointsCheckbox, showModelCheckbox].forEach((el) =>
+[trialPeriodInput, samplePeriodInput, simulationModeSelect, discretePointsCheckbox].forEach((el) =>
   el.addEventListener('change', () => {
     experiment.updateConfig(currentConfig());
     syncPaceButtons();
@@ -1140,7 +1268,6 @@ resetSettingsBtn.addEventListener('click', () => {
   trialPeriodInput.value = String(DEFAULT_SETTINGS.trialPeriodMs);
   samplePeriodInput.value = String(DEFAULT_SETTINGS.samplePeriodMs);
   simulationModeSelect.value = DEFAULT_SETTINGS.simulationMode;
-  showModelCheckbox.checked = DEFAULT_SETTINGS.showModel;
   discretePointsCheckbox.checked = DEFAULT_SETTINGS.discretePoints;
   applyTheme(DEFAULT_SETTINGS.theme);
 
@@ -1176,12 +1303,12 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 // Export: the samples on show, as a download in the data file format.
 saveDataBtn.addEventListener('click', () => {
-  if (!lastSamples) return;
-  const blob = new Blob([formatAllSamplesBlock(lastSamples.xs, lastSamples.ys)], { type: 'text/plain' });
+  if (!samplesShown) return;
+  const blob = new Blob([formatAllSamplesBlock(samplesShown.xs, samplesShown.ys)], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const stamp = new Date(samplesShown.createdAt).toISOString().replace(/[:.]/g, '-').slice(0, 19);
   a.download = `Pursuit Tracking Data ${stamp}.txt`;
   document.body.appendChild(a);
   a.click();
@@ -1193,23 +1320,297 @@ loadDataBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
+  // A live run owns the analysis: importing now would identify the run's
+  // samples and file them under the imported name.
+  if (experiment.isActive()) {
+    fileInput.value = '';
+    statusEl.textContent = 'Stop the run before importing a recording';
+    return;
+  }
   const text = await file.text();
+  // Cleared so choosing the same file again still fires 'change'.
+  fileInput.value = '';
+  let parsed: { xs: Float64Array; ys: Float64Array };
   try {
-    const { xs, ys } = parseRecording(text);
-    lastSamples = { xs, ys };
-    displaySamples(xs, ys);
-    saveDataBtn.disabled = false;
-    clearAnalysis(currentConfig().samplePeriodMs, 'none');
-    plotSource = 'none';
-    syncLegend();
-    syncAnalysis();
-    updateActionAvailability();
-    statusEl.textContent = `Loaded ${xs.length} samples from ${file.name}`;
-    setGuide(touchFirst ? 'Hold Record or the plot to record; lift to stop' : RECORD_AGAIN, 'Replay shows this recording with the model overlaid');
+    parsed = parseRecording(text);
   } catch (err) {
     statusEl.textContent = (err as Error).message;
+    return;
+  }
+  const { xs, ys } = parsed;
+  const existing = await safely(() => findByHash(hashSamples(xs, ys)));
+  if (existing) {
+    showRecording(existing, `Loaded ${xs.length} samples from ${file.name} · already in your recordings`);
+    if (dataDialog.open) void renderLibrary();
+  } else {
+    showSamples(xs, ys, currentConfig().samplePeriodMs, 'none', []);
+    statusEl.textContent = `Loaded ${xs.length} samples from ${file.name}`;
+    // Re-renders the list itself once the new row exists.
+    await keepRecording(xs, ys, 'none', analysisSamplePeriodMs, file.name);
   }
 });
+
+/* ----------------------------------------------------- recording library */
+
+/** Runs a library call, and on failure says so once instead of breaking the app. */
+async function safely<T>(run: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await run();
+  } catch {
+    libraryUnavailable.hidden = false;
+    return undefined;
+  }
+}
+
+/** What a list row shows, from the analysis on screen. */
+function summarize(): RecordingSummary {
+  const included = includedTrials();
+  if (included.length === 0) return { trials: trials.length, included: 0, zeta: NaN, wn: NaN, delayMs: NaN };
+  const agg = aggregateTrials(included, analysisSamplePeriodMs);
+  const c = SIM_SOURCE === 'median' ? agg.medianContinuous : agg.averageContinuous;
+  const { wn, zeta } = dampingMetrics(c);
+  return { trials: trials.length, included: included.length, zeta, wn, delayMs: c.D2 * 1000 };
+}
+
+/** Stores the analysis on screen as a new recording and makes it the open one. */
+async function keepRecording(
+  xs: Float64Array,
+  ys: Float64Array,
+  source: SimulationMode,
+  samplePeriodMs: number,
+  fileName?: string,
+) {
+  const createdAt = Date.now();
+  const id = await safely(() =>
+    addRecording({
+      createdAt,
+      source,
+      fileName,
+      samplePeriodMs,
+      xs,
+      ys,
+      excluded: [...excluded],
+      note: '',
+      summary: summarize(),
+      hash: hashSamples(xs, ys),
+    }),
+  );
+  if (id === undefined) return;
+  currentRecordingId = id;
+  rememberOpen(id);
+  setRecordingName(recordingName({ note: '', fileName, createdAt }));
+  if (dataDialog.open) void renderLibrary();
+}
+
+/** Saves the unticked trials, and the summary they change, to the open recording. */
+function persistAnalysis() {
+  if (currentRecordingId === null) return;
+  void safely(() => updateRecording(currentRecordingId!, { excluded: [...excluded], summary: summarize() }));
+}
+
+/** Puts samples on screen and identifies them, as an import or an opened recording. */
+function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number, source: SimulationMode, exclude: number[]) {
+  dismissFlash();
+  lastSamples = { xs, ys, samplePeriodMs };
+  clearAnalysis(samplePeriodMs, source);
+  // After clearAnalysis, which empties it, and before the trials are drawn.
+  for (const i of exclude) excluded.add(i);
+  plotSource = source;
+  syncLegend();
+  syncAnalysis();
+  updateActionAvailability();
+  setGuide(
+    touchFirst ? 'Hold Record or the plot to record; lift to stop' : RECORD_AGAIN,
+    'Replay shows this recording with the model overlaid',
+  );
+}
+
+function showRecording(rec: Recording, status: string) {
+  showSamples(rec.xs, rec.ys, rec.samplePeriodMs, rec.source, rec.excluded);
+  currentRecordingId = rec.id;
+  rememberOpen(rec.id);
+  setRecordingName(recordingName(rec));
+  statusEl.textContent = status;
+}
+
+/** "Today · 14:32", "Yesterday · 09:05", "Sep 3 · 18:40". */
+function whenLabel(t: number): string {
+  const d = new Date(t);
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  // Built from the calendar, not today minus 24 h: across a daylight-saving
+  // change a day is 23 or 25 hours long.
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+  if (day === today) return `Today · ${time}`;
+  if (day === yesterday) return `Yesterday · ${time}`;
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
+  return `${d.toLocaleDateString(undefined, opts)} · ${time}`;
+}
+
+function whoLabel(rec: Recording): string {
+  if (rec.fileName) return rec.fileName;
+  return rec.source === 'none' ? 'You' : `${modelName(rec.source).replace(/^./, (c) => c.toUpperCase())} · self-test`;
+}
+
+function statsLabel(s: RecordingSummary | null): string {
+  if (!s) return '';
+  const count = trialCount(s.trials);
+  if (s.included === 0) return `${count} · all excluded`;
+  return `${count} · ζ ${s.zeta.toFixed(2)} · ${s.delayMs.toFixed(0)} ms delay`;
+}
+
+/** A small button for a library row. */
+function rowButton(cls: string, text: string, label: string, onClick: () => void) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `${cls} ghost`;
+  b.textContent = text;
+  b.setAttribute('aria-label', label);
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/**
+ * The run on screen when nothing stores it -- the library is unavailable, or
+ * its recording was deleted -- so its samples can still be read and exported.
+ */
+function unsavedRow(): HTMLLIElement | null {
+  if (!lastSamples || currentRecordingId !== null || experiment.isActive()) return null;
+  const shown = lastSamples;
+  const li = document.createElement('li');
+  li.className = 'rec';
+  li.dataset.unsaved = 'true';
+  li.setAttribute('aria-current', 'true');
+  const info = document.createElement('div');
+  info.className = 'rec-open';
+  for (const [cls, text] of [
+    ['rec-when', 'On screen · not kept'],
+    ['rec-who', plotSource === 'none' ? 'You' : `${modelName(plotSource)} · self-test`],
+    ['rec-stats', statsLabel(summarize())],
+  ]) {
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = text;
+    info.appendChild(span);
+  }
+  const data = rowButton('rec-data', 'Data', 'Samples of the run on screen', () =>
+    openSamples({ ...shown, name: 'the run on screen', createdAt: Date.now() }),
+  );
+  li.append(info, data);
+  return li;
+}
+
+async function renderLibrary() {
+  const all = await safely(listRecordings);
+  libraryList.innerHTML = '';
+  const unsaved = unsavedRow();
+  if (unsaved) libraryList.appendChild(unsaved);
+  libraryEmpty.hidden = !!unsaved || (all?.length ?? 0) > 0;
+  if (!all) return;
+  for (const rec of all) {
+    const li = document.createElement('li');
+    li.className = 'rec';
+    li.setAttribute('aria-current', String(rec.id === currentRecordingId));
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'rec-open';
+    openBtn.title = 'Open this recording';
+    for (const [cls, text] of [
+      ['rec-when', whenLabel(rec.createdAt)],
+      ['rec-who', whoLabel(rec)],
+      ['rec-stats', statsLabel(rec.summary)],
+    ]) {
+      const span = document.createElement('span');
+      span.className = cls;
+      span.textContent = text;
+      openBtn.appendChild(span);
+    }
+    openBtn.addEventListener('click', () => {
+      if (experiment.isActive()) return;
+      showRecording(rec, `Opened the recording from ${whenLabel(rec.createdAt)}`);
+      dataDialog.close();
+    });
+
+    // Saved as you type, a moment after you stop; no Save button to forget.
+    const note = document.createElement('input');
+    note.type = 'text';
+    note.className = 'rec-note';
+    note.value = rec.note;
+    note.placeholder = 'Add a note: mouse, trackpad, tired…';
+    note.setAttribute('aria-label', `Note for the recording from ${whenLabel(rec.createdAt)}`);
+    let noteTimer: ReturnType<typeof setTimeout> | undefined;
+    const saveNote = () => {
+      clearTimeout(noteTimer);
+      rec.note = note.value;
+      if (rec.id === currentRecordingId) setRecordingName(recordingName(rec));
+      void safely(() => updateRecording(rec.id, { note: note.value }));
+    };
+    note.addEventListener('input', () => {
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(saveNote, 400);
+    });
+    note.addEventListener('change', saveNote);
+    // Enter would submit the dialog's form and close it mid-thought.
+    note.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveNote();
+        note.blur();
+      }
+    });
+
+    // Two presses: the first arms it, the second deletes. Deleting cannot be
+    // undone, and a list of similar rows is an easy place to misclick.
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'rec-delete ghost';
+    del.textContent = 'Delete';
+    del.setAttribute('aria-label', `Delete the recording from ${whenLabel(rec.createdAt)}`);
+    del.addEventListener('click', async () => {
+      if (del.dataset.confirm !== 'true') {
+        del.dataset.confirm = 'true';
+        del.textContent = 'Delete?';
+        return;
+      }
+      await safely(() => deleteRecording(rec.id));
+      // The run stays on screen; it is just no longer kept.
+      if (rec.id === currentRecordingId) {
+        currentRecordingId = null;
+        rememberOpen(null);
+        setRecordingName('');
+      }
+      void renderLibrary();
+    });
+    del.addEventListener('blur', () => {
+      del.dataset.confirm = 'false';
+      del.textContent = 'Delete';
+    });
+
+    const data = rowButton('rec-data', 'Data', `Samples of the recording from ${whenLabel(rec.createdAt)}`, () =>
+      openSamples({ ...rec, name: recordingName(rec) }),
+    );
+
+    li.append(openBtn, data, del, note);
+    libraryList.appendChild(li);
+  }
+}
+
+/**
+ * Reopens the recording that was open when the page was last left, so a
+ * reload picks up where you were. If that one has since been deleted, the
+ * newest is the best guess.
+ */
+async function restoreLatest() {
+  const id = rememberedOpen();
+  const rec = (id !== null ? await safely(() => getRecording(id)) : undefined) ?? (await safely(listRecordings))?.[0];
+  // A run or an import may have started while the library was being read.
+  if (!rec || lastSamples || experiment.isActive()) return;
+  showRecording(rec, `Reopened ${recordingName(rec)}`);
+}
 
 syncPaceButtons();
 syncLegend();
@@ -1218,3 +1619,4 @@ renderResults();
 // Otherwise Replay starts life dimmed with no tooltip to explain why: the
 // availability pass only runs on a state change, and none has happened yet.
 updateActionAvailability();
+void restoreLatest();

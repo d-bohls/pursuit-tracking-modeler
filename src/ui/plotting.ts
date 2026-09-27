@@ -11,8 +11,6 @@ export interface FrequencyPlotSeries {
   firstOrder: Float64Array;
   /** Magnitude response of the fitted second-order model. */
   secondOrder: Float64Array;
-  /** Legend text for `secondOrder`, when it is not the fit (a dragged pole). */
-  secondOrderLabel?: string;
 }
 
 interface Chrome {
@@ -22,8 +20,8 @@ interface Chrome {
   muted: string;
   /** The measurement -- your recorded response. */
   measured: string;
-  /** The first-order fit. */
-  first: string;
+  /** The target, the step every trial responds to. */
+  target: string;
   /** The second-order fit, and the identified model everywhere else. */
   second: string;
 }
@@ -37,7 +35,7 @@ function chromeOf(canvas: HTMLCanvasElement): Chrome {
     axis: read('--plot-axis', '#c3c2b7'),
     muted: read('--plot-muted', '#898781'),
     measured: read('--series-you', '#eb6834'),
-    first: read('--series-target', '#2a78d6'),
+    target: read('--series-target', '#2a78d6'),
     second: read('--series-model', '#1baf7a'),
   };
 }
@@ -61,32 +59,6 @@ function prepare(canvas: HTMLCanvasElement, surface: string) {
   ctx.fillStyle = surface;
   ctx.fillRect(0, 0, w, h);
   return { ctx, width: w, height: h };
-}
-
-type LegendEntry = [label: string, color: string, dash: number[]];
-
-/**
- * A key in the top-right corner, sized to its longest label so a longer entry
- * ("2nd-order (dragged)") cannot run off the edge of the plot.
- */
-function drawLegend(ctx: CanvasRenderingContext2D, entries: LegendEntry[], right: number, top: number, muted: string) {
-  ctx.font = '11px system-ui, sans-serif';
-  const widest = Math.max(...entries.map(([label]) => ctx.measureText(label).width));
-  const lx = right - widest - 24;
-  let ly = top;
-  for (const [label, color, dash] of entries) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.setLineDash(dash);
-    ctx.beginPath();
-    ctx.moveTo(lx, ly - 4);
-    ctx.lineTo(lx + 18, ly - 4);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = muted;
-    ctx.fillText(label, lx + 24, ly);
-    ly += 15;
-  }
 }
 
 /**
@@ -143,7 +115,10 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   ctx.fillText('π', marginL + plotW / 2 - 3, height - marginB + 14);
   ctx.fillText('2π', width - marginR - 10, height - marginB + 14);
   ctx.fillText('ω (rad/sample)', marginL + plotW / 2 - 38, height - marginB + 26);
-  ctx.fillText(yMax.toFixed(2), 6, marginT + 8);
+  // The top of the axis sits close to 1 whenever the response barely peaks,
+  // and there its label printed on top of the unity label. Unity wins: it is
+  // the line a well-tracked step sits on.
+  if (yAt(1) - (marginT + 5) > 12) ctx.fillText(yMax.toFixed(2), 6, marginT + 8);
   ctx.fillText('1.00', 6, yAt(1) + 3);
   ctx.fillText('0', 6, marginT + plotH + 3);
 
@@ -172,22 +147,11 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
     ctx.setLineDash([]);
   };
 
-  drawSeries(series.firstOrder, c.first, 2, [5, 4]);
+  // Grey, not the target's blue: the two share the key above the plots, and
+  // one colour meaning two things there would be a lie in one of them.
+  drawSeries(series.firstOrder, c.muted, 2, [5, 4]);
   drawSeries(series.secondOrder, c.second, 2, []);
   drawSeries(series.sampled, c.measured, 2, []);
-
-  // legend, top-right so it stays clear of the low-frequency peak
-  drawLegend(
-    ctx,
-    [
-      ['Measured', c.measured, []],
-      [series.secondOrderLabel ?? '2nd-order fit', c.second, []],
-      ['1st-order fit', c.first, [5, 4]],
-    ],
-    width - marginR - 6,
-    marginT + 12,
-    c.muted,
-  );
 }
 
 /**
@@ -231,12 +195,24 @@ export function plotPoleLocations(
   ctx.font = '10px system-ui, sans-serif';
   ctx.fillText('unit circle', cx - r, cy - r - 6);
 
+  // Where a pair's two poles sit: a complex pair mirrored about the real
+  // axis, a real pair (p2 < 0) both ON it, either side of p1.
+  const points = (p1: number, p2: number): Array<[number, number]> =>
+    p2 >= 0
+      ? [
+          [cx + p1 * r, cy - p2 * r],
+          [cx + p1 * r, cy + p2 * r],
+        ]
+      : [
+          [cx + (p1 - p2) * r, cy],
+          [cx + (p1 + p2) * r, cy],
+        ];
+
   const cross = (p1: number, p2: number, color: string, alpha: number) => {
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    for (const y of [cy - p2 * r, cy + p2 * r]) {
-      const x = cx + p1 * r;
+    for (const [x, y] of points(p1, p2)) {
       ctx.beginPath();
       ctx.moveTo(x - 5, y - 5);
       ctx.lineTo(x + 5, y + 5);
@@ -251,9 +227,9 @@ export function plotPoleLocations(
     // A faint ring says "this can be picked up" without a word of text.
     ctx.fillStyle = c.second;
     ctx.globalAlpha = 0.14;
-    for (const y of [cy - p2 * r, cy + p2 * r]) {
+    for (const [x, y] of points(p1, p2)) {
       ctx.beginPath();
-      ctx.arc(cx + p1 * r, y, 11, 0, 2 * Math.PI);
+      ctx.arc(x, y, 11, 0, 2 * Math.PI);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -355,18 +331,10 @@ export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeri
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   };
-  line(series.target, c.first, 2, []);
+  line(series.target, c.target, 2, []);
   if (series.fit) line(series.fit, c.second, 1.5, [4, 3], 0.6);
   line(series.measured, c.measured, 2, []);
   line(series.model, c.second, 2, []);
-
-  const legend: LegendEntry[] = [
-    ['Target', c.first, []],
-    ['Measured', c.measured, []],
-    [series.fit ? 'Dragged model' : 'Model', c.second, []],
-  ];
-  if (series.fit) legend.push(['Fit', c.second, [4, 3]]);
-  drawLegend(ctx, legend, width - marginR - 4, marginT + 10, c.muted);
 }
 
 /**
@@ -443,6 +411,6 @@ export function plotTrialSparkline(
     ctx.stroke();
   };
 
-  line(xn, c.first);
+  line(xn, c.target);
   line(yn, c.measured);
 }

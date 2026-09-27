@@ -4,7 +4,7 @@
 import { parseTrials, padTrials } from './trials';
 import { deconvolve, dft } from './dsp';
 import { fit1PoleOutputError, fit2PoleOutputError } from './curveFit';
-import { discretePoleToContinuous } from './poleConversion';
+import { discretePairToContinuous, discretePoleToContinuous, pairNaturalFrequency, pairProduct } from './poleConversion';
 import type { ContinuousModelParams, DiscreteModelParams, Trial } from './types';
 
 export interface TrialAnalysis {
@@ -81,7 +81,7 @@ export function analyzeTrial(trial: Trial, padded: Trial, samplePeriodMs: number
   // delays below (see the units note in poleConversion.ts)
   const tsSeconds = samplePeriodMs / 1000;
   const c1 = discretePoleToContinuous(fit1.p, 0, tsSeconds);
-  const c2 = discretePoleToContinuous(fit2.p1, fit2.p2, tsSeconds);
+  const c2 = discretePairToContinuous(fit2.p1, fit2.p2, tsSeconds);
 
   const discrete: DiscreteModelParams = {
     P11: fit1.p,
@@ -123,7 +123,7 @@ export function aggregateTrials(trials: TrialAnalysis[], samplePeriodMs: number)
   };
 
   const c1avg = discretePoleToContinuous(averageDiscrete.P11, 0, samplePeriodMs / 1000);
-  const c2avg = discretePoleToContinuous(averageDiscrete.P21, averageDiscrete.P22, samplePeriodMs / 1000);
+  const c2avg = discretePairToContinuous(averageDiscrete.P21, averageDiscrete.P22, samplePeriodMs / 1000);
   const averageContinuous: ContinuousModelParams = {
     P11: c1avg.cr,
     D1: (averageDiscrete.D1 * samplePeriodMs) / 1000,
@@ -140,7 +140,7 @@ export function aggregateTrials(trials: TrialAnalysis[], samplePeriodMs: number)
     D2: median(trials.map((t) => t.discrete.D2)),
   };
   const m1 = discretePoleToContinuous(medianDiscrete.P11, 0, samplePeriodMs / 1000);
-  const m2 = discretePoleToContinuous(medianDiscrete.P21, medianDiscrete.P22, samplePeriodMs / 1000);
+  const m2 = discretePairToContinuous(medianDiscrete.P21, medianDiscrete.P22, samplePeriodMs / 1000);
   const medianContinuous: ContinuousModelParams = {
     P11: m1.cr,
     D1: (medianDiscrete.D1 * samplePeriodMs) / 1000,
@@ -166,8 +166,9 @@ export function firstOrderDifferenceEquation(d: DiscreteModelParams, decimals = 
 
 /** e.g. */
 export function secondOrderDifferenceEquation(d: DiscreteModelParams, decimals = 4): string {
-  const gain = 1 - 2 * d.P21 + d.P21 ** 2 + d.P22 ** 2;
-  return `y[n]-(${(2 * d.P21).toFixed(decimals)})y[n-1]+(${(d.P21 ** 2 + d.P22 ** 2).toFixed(decimals)})y[n-2]=(${gain.toFixed(decimals)})x[n-${d.D2}]`;
+  const a2 = pairProduct(d.P21, d.P22);
+  const gain = 1 - 2 * d.P21 + a2;
+  return `y[n]-(${(2 * d.P21).toFixed(decimals)})y[n-1]+(${a2.toFixed(decimals)})y[n-2]=(${gain.toFixed(decimals)})x[n-${d.D2}]`;
 }
 
 /**
@@ -179,15 +180,14 @@ export function secondOrderDifferenceEquation(d: DiscreteModelParams, decimals =
  */
 export function continuousSecondOrderTf(c: ContinuousModelParams, decimals = 4): string {
   const a = c.P21; // real part of continuous pole (should be negative for a stable, decaying tracker)
-  const b = c.P22; // imaginary part
-  const wn = Math.sqrt(a * a + b * b);
+  const wn = pairNaturalFrequency(a, c.P22);
   const zeta = wn === 0 ? 0 : -a / wn;
   const delay = c.D2;
   const delayTerm = delay !== 0 ? ` * e^(-${delay.toFixed(decimals)}s)` : '';
   return (
     `H(s) = ${wn.toFixed(decimals)}² / (s² + ${(2 * zeta * wn).toFixed(decimals)}s + ${wn.toFixed(decimals)}²)${delayTerm}\n` +
     `  natural frequency ωn = ${wn.toFixed(decimals)} rad/s, damping ratio ζ = ${zeta.toFixed(decimals)}` +
-    (zeta < 1 ? ` (underdamped)` : zeta === 1 ? ` (critically damped)` : ` (overdamped)`)
+    ` (${dampingCharacter(zeta)})`
   );
 }
 
@@ -199,9 +199,23 @@ export function continuousFirstOrderTf(c: ContinuousModelParams, decimals = 4): 
   return `H(s) = 1 / (${tau.toFixed(decimals)}s + 1)${delayTerm}\n  time constant τ = ${tau.toFixed(decimals)} s`;
 }
 
+/**
+ * How close to critical a damping ratio has to be to be called critical. A
+ * fitted zeta is a measurement, never exactly 1.000, so an exact test left
+ * "critically damped" unreachable: a perfectly critical response read as
+ * "underdamped" at zeta = 0.9999.
+ */
+const CRITICAL_BAND = 0.05;
+
+export function dampingCharacter(zeta: number): 'underdamped' | 'critically damped' | 'overdamped' {
+  if (zeta < 1 - CRITICAL_BAND) return 'underdamped';
+  if (zeta > 1 + CRITICAL_BAND) return 'overdamped';
+  return 'critically damped';
+}
+
 /** Natural frequency / damping ratio / overshoot of a continuous 2nd-order model. */
 export function dampingMetrics(c: ContinuousModelParams) {
-  const wn = Math.hypot(c.P21, c.P22);
+  const wn = pairNaturalFrequency(c.P21, c.P22);
   const zeta = wn === 0 ? 0 : -c.P21 / wn;
   const overshoot = zeta > 0 && zeta < 1 ? Math.exp((-Math.PI * zeta) / Math.sqrt(1 - zeta * zeta)) * 100 : 0;
   return { wn, zeta, overshoot };
@@ -225,7 +239,7 @@ export function firstOrderMagnitudeResponse(P11: number, n: number): Float64Arra
  */
 export function secondOrderMagnitudeResponse(P21: number, P22: number, n: number): Float64Array {
   const out = new Float64Array(n);
-  const v1 = P21 * P21 + P22 * P22;
+  const v1 = pairProduct(P21, P22);
   const gain = 1 - 2 * P21 + v1;
   for (let k = 0; k < n; k++) {
     const w = (2 * Math.PI * k) / n;

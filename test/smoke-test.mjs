@@ -40,7 +40,7 @@ const fail = (msg) => {
 // 1. page loaded without script errors
 if (consoleErrors.length) fail(`console errors on load: ${consoleErrors.join(' | ')}`);
 
-// Save and the sample dump live in the Recorded data modal now.
+// The recordings list, and one recording's samples, each in a modal.
 const openData = async () => {
   await page.locator('#dataBtn').click();
   await page.waitForTimeout(200);
@@ -50,11 +50,9 @@ const closeData = async () => {
   await page.waitForTimeout(200);
 };
 
-// 2. the empty state is honest: nothing to save, no trials, no model
+// 2. the empty state is honest: nothing kept, no trials, no model
 await openData();
-if (!(await page.locator('#saveDataBtn').isDisabled())) {
-  fail('save button should start disabled with no recording');
-}
+if ((await page.locator('#libraryList .rec').count()) !== 0) fail('recordings listed before any data');
 await closeData();
 if ((await page.locator('.trial-card').count()) !== 0) fail('trial cards present before any data');
 if (!/Record a few steps/.test((await page.locator('#readout').textContent()) ?? '')) {
@@ -69,9 +67,17 @@ const status = await page.locator('#status').textContent();
 if (!/Loaded 437 samples/.test(status ?? '')) fail(`unexpected load status: ${status}`);
 
 await openData();
+await page.locator('#libraryList .rec-data').first().click();
+await page.waitForTimeout(200);
 const samplesText = await page.locator('#samplesOut').inputValue();
-if (!samplesText.startsWith('n\tx[n]\ty[n]')) fail('samples pane did not populate');
-if (await page.locator('#saveDataBtn').isDisabled()) fail('save should be enabled once data is loaded');
+if (!samplesText.startsWith('n\tx[n]\ty[n]')) fail('samples view did not populate');
+if (!/437 samples · one every 100 ms/.test((await page.locator('#samplesMeta').textContent()) ?? '')) {
+  fail(`samples view summary is wrong: "${await page.locator('#samplesMeta').textContent()}"`);
+}
+if (await page.locator('#saveDataBtn').isDisabled()) fail('export should be available in the samples view');
+await page.locator('#samplesDialog button[value="close"]').click();
+await page.waitForTimeout(200);
+if (!(await page.locator('#dataDialog').isVisible())) fail('closing the samples view should return to the list');
 await closeData();
 
 // 4. one card per trial, and the summary model matches the engine
@@ -147,6 +153,25 @@ if (await page.locator('#poleResetBtn').isHidden()) fail('"Back to the fit" did 
 await page.keyboard.press('Escape');
 if ((await errOf()) !== atFit) fail('Escape did not return the pole to the fit');
 if ((await modelOf()) !== before) fail('dragging the pole changed the identified model');
+
+// 7c. a replay runs at the speed it was RECORDED at, not at today's setting.
+// The reference file is 100 ms per sample; with Settings at 50 ms, pacing by the
+// setting played it at double speed.
+await page.locator('#settingsBtn').click();
+await page.locator('#samplePeriod').fill('50');
+await page.locator('#samplePeriod').dispatchEvent('change');
+await page.locator('#settingsDialog button[value="close"]').click();
+await page.locator('#replayBtn').click();
+await page.waitForTimeout(2200);
+const replayPct = Number(((await page.locator('#status').textContent()) ?? '').match(/Replaying · (\d+)%/)?.[1]);
+await page.keyboard.press('Space');
+await page.waitForTimeout(300);
+// ~2.2 s of a 43.7 s recording is ~5%; paced at 50 ms it would read ~10%.
+if (!(replayPct >= 3 && replayPct <= 7)) fail(`replay ran at the wrong speed: ${replayPct}% after 2.2 s`);
+await page.locator('#settingsBtn').click();
+await page.locator('#samplePeriod').fill('100');
+await page.locator('#samplePeriod').dispatchEvent('change');
+await page.locator('#settingsDialog button[value="close"]').click();
 
 // 8. dark mode repaints the canvases too -- they cannot inherit CSS colours
 const surfaceOf = (selector) =>

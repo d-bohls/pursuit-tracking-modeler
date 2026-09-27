@@ -3,14 +3,24 @@
 
 import type { Trial } from './types';
 
-export function parseTrials(xs: Float64Array, ys: Float64Array): Trial[] {
+/**
+ * Where the recording splits: 0, then the index of every sample at which the
+ * target has just stepped. Trial k runs from indices[k] to indices[k + 1]; the
+ * stretch before the first step and the one after the last are not trials.
+ * Shared by parseTrials and trialLeadIns so the two can never disagree.
+ */
+function stepIndices(xs: Float64Array, ys: Float64Array): number[] {
   const ns = Math.min(xs.length, ys.length) - 1;
   if (ns < 1) return [];
-
   const indices: number[] = [0];
   for (let i = 1; i <= ns; i++) {
     if (xs[i - 1] !== xs[i]) indices.push(i);
   }
+  return indices;
+}
+
+export function parseTrials(xs: Float64Array, ys: Float64Array): Trial[] {
+  const indices = stepIndices(xs, ys);
   const trialCount = indices.length - 1;
   const trials: Trial[] = [];
   for (let i1 = 1; i1 < trialCount; i1++) {
@@ -55,22 +65,16 @@ export function padTrials(trials: Trial[], factor = 10): Trial[] {
  * The samples just BEFORE each trial's step, in that trial's frame, one entry
  * per trial that parseTrials returns. Display only: a trial starts on its
  * step, so without these a thumbnail shows the response but not the step
- * that caused it. Up to `count` samples, fewer if the previous stretch is
- * shorter. Takes the same raw arrays as parseTrials and splits them the same
- * way.
+ * that caused it. Each lead-in is `fraction` of its own trial's length, at
+ * least two samples, and never reaches back past the previous step.
  */
-export function trialLeadIns(xs: Float64Array, ys: Float64Array, count: number): Trial[] {
-  const ns = Math.min(xs.length, ys.length) - 1;
-  if (ns < 1) return [];
-
-  const indices: number[] = [0];
-  for (let i = 1; i <= ns; i++) {
-    if (xs[i - 1] !== xs[i]) indices.push(i);
-  }
+export function trialLeadIns(xs: Float64Array, ys: Float64Array, fraction: number): Trial[] {
+  const indices = stepIndices(xs, ys);
   const leads: Trial[] = [];
   for (let i1 = 1; i1 < indices.length - 1; i1++) {
     const shift = xs[indices[i1] - 1];
     const end = indices[i1];
+    const count = Math.max(2, Math.ceil((indices[i1 + 1] - end) * fraction));
     const start = Math.max(indices[i1 - 1], end - count);
     leads.push({
       xn: xs.slice(start, end).map((v) => v - shift),

@@ -45,10 +45,11 @@ useful for re-analyzing old recordings.
 - **The headline is about you**, not about the polynomial: reaction delay,
   overshoot, damping, natural frequency. `H(s)` is set as an actual fraction
   underneath as the supporting evidence.
-- **The model can run beside you.** With `Draw the model's prediction`
-  enabled, the identified system is driven by the same target on its own past
-  and drawn as a dashed ghost — so you can see where the model and the hand
-  disagree, live.
+- **The model can run beside you.** Replay plays a recorded run back with the
+  identified system driven by the same target on its own past, drawn as a
+  dashed line — so you can see where the model and the hand disagree. It is
+  never drawn while you record: a line to follow would change what is being
+  measured.
 - Dark mode, HiDPI-correct canvases, a resizable plot, pointer (not mouse)
   input so a tablet works, and a data palette validated for colour-vision
   deficiency.

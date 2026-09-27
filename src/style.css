@@ -210,6 +210,14 @@ button.primary[data-recording="true"] {
 /* An author `display` beats the UA's [hidden] rule, so hiding a legend entry
  * has to be spelled out or `hidden` silently does nothing. */
 .legend li[hidden] { display: none; }
+.legend[hidden] { display: none; }
+/* The detail plots' key: plain line samples, solid or dashed like the plots. */
+.detail-legend { font-size: 0.75rem; justify-content: center; }
+/* Centred on the card like the Trials header's note, not pushed to the end
+ * like a header's action button. */
+.split-head > .detail-legend { justify-self: center; }
+.key { width: 18px; height: 0; border-top: 2px solid var(--key); display: inline-block; }
+.key-dashed { border-top-style: dashed; }
 /* Line plus the mark that sits at the pen, so the legend reads as the same
  * object the plot draws: square target, round you, diamond model. */
 .swatch {
@@ -416,16 +424,14 @@ button.primary[data-recording="true"] {
   transform: translateY(-50%);
   margin: 0;
   text-align: center;
-  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  /* Quieter than when it faded out after two seconds: a message that stays
+   * does not need to shout to be seen. */
+  font-size: clamp(0.85rem, 1.5vw, 1.15rem);
+  font-weight: 600;
   color: var(--ink);
   pointer-events: none;
-  opacity: 1;
-  transition: opacity 600ms ease;
 }
 .stage-flash[hidden] { display: none; }
-.stage-flash[data-fading="true"] { opacity: 0; }
 /* ------------------------------------------------------------------ deck */
 
 .workspace {
@@ -511,12 +517,32 @@ button.primary[data-recording="true"] {
 .card-note { margin: 0; font-size: 0.75rem; color: var(--ink-muted); }
 /* Title left, optional action right, and the note centred on the card between
  * them. Equal outer tracks keep it on the true centre whatever the ends measure. */
-.split-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+.split-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
 .split-head .card-note { text-align: center; }
+.trial-notes p { margin: 0; }
+.trial-notes p + p { margin-top: 2px; }
+/* A long note must not push the centred instruction off its centre: the name
+ * is cut to fit its column, and the full text is in the tooltip. */
+.trials-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#recordingName { font-weight: 500; color: var(--ink-muted); }
+
+/* A tape recorder's red dot: says "record" before the word is read, and keeps
+ * the button dark -- a red button would read as the danger it means elsewhere
+ * (stopping a run, confirming a delete). */
+#recordBtn::before {
+  content: "";
+  display: inline-block;
+  width: 0.62em;
+  height: 0.62em;
+  margin-right: 0.45em;
+  border-radius: 50%;
+  background: var(--critical);
+  vertical-align: 0.02em;
+}
 .split-head > :last-child:not(.card-note) { justify-self: end; }
 @container (max-width: 500px) {
-  .split-head { grid-template-columns: 1fr auto; }
-  .split-head .card-note { grid-row: 2; grid-column: 1 / -1; }
+  .split-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .split-head .card-note, .split-head .detail-legend { grid-row: 2; grid-column: 1 / -1; }
 }
 
 /* The detail plots belong to the trial you picked above them, so they share
@@ -774,6 +800,68 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
   border-top: 1px solid var(--line);
 }
 .footer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ------------------------------------------------------------ library */
+
+.library { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.library:empty { display: none; }
+.rec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "open data delete" "note note note";
+  gap: 6px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+/* The open recording: the one on screen, and the one a note or a ticked
+ * trial is saved to. */
+.rec[aria-current="true"] { border-color: var(--ink-muted); box-shadow: inset 3px 0 0 var(--ink); }
+.rec-open {
+  grid-area: open;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 0.8rem;
+}
+.rec-open:hover .rec-when { text-decoration: underline; }
+.rec-when { font-weight: 600; color: var(--ink); }
+.rec-who, .rec-stats { color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.rec-delete, .rec-data { align-self: start; padding: 3px 8px; font-size: 0.72rem; }
+.rec-delete { grid-area: delete; }
+.rec-data { grid-area: data; }
+/* The run on screen when it is not kept: no note to save, nothing to delete. */
+.rec[data-unsaved="true"] { border-style: dashed; grid-template-areas: "open data ."; }
+.rec-delete[data-confirm="true"] { border-color: var(--critical); color: var(--critical); }
+.rec-note {
+  grid-area: note;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-width: 0;
+}
+.library-warning { margin: 0; font-size: 0.8rem; color: var(--critical); }
+.samples-meta { margin: 0; font-size: 0.8rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+#samplesOut {
+  width: 100%;
+  font: 0.78rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
 /* Done stays on the right even when it wraps under the other actions. */
 .settings-footer > button[value="close"] { margin-left: auto; min-width: 5.5rem; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }

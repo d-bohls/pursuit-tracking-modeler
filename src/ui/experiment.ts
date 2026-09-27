@@ -8,7 +8,13 @@
 // animation frame, so the plot is independent of the canvas's size,
 // resolution and theme.
 
-import { continuousPoleToDiscrete, discretePoleToContinuous } from '../engine/poleConversion';
+import {
+  continuousPairToDiscrete,
+  continuousPoleToDiscrete,
+  discretePoleToContinuous,
+  pairNaturalFrequency,
+  pairProduct,
+} from '../engine/poleConversion';
 
 export type SimulationMode = 'none' | 'first' | 'second';
 
@@ -18,8 +24,6 @@ export interface ExperimentConfig {
   scrollPeriodMs: number;
   simulationMode: SimulationMode;
   discretePoints: boolean;
-  /** Draw the identified model's prediction alongside a human recording. */
-  showModel: boolean;
 }
 
 export interface ExperimentResult {
@@ -105,7 +109,7 @@ export const DEFAULT_SIMULATION_MODEL: SimulationModel = {
 
 /** Natural frequency and damping ratio of a continuous second-order model. */
 export function dampingOf(model: SimulationModel): { wn: number; zeta: number } {
-  const wn = Math.hypot(model.P21, model.P22);
+  const wn = pairNaturalFrequency(model.P21, model.P22);
   return { wn, zeta: wn === 0 ? 0 : -model.P21 / wn };
 }
 
@@ -150,8 +154,6 @@ export class TrackingExperiment {
 
   private xs: number[] = [];
   private ys: number[] = [];
-  /** The ghost's own past, so it predicts from the target rather than from you. */
-  private ms: number[] = [];
 
   private history: Frame[] = [];
   private steppedThisColumn = false;
@@ -166,6 +168,8 @@ export class TrackingExperiment {
   private replayYs: Float64Array = new Float64Array();
   private replayModel: Float64Array = new Float64Array();
   private replayElapsedMs = 0;
+  /** The period the replayed samples were RECORDED at, which paces the replay. */
+  private replayPeriodMs = 100;
 
   private sampleTimerHandle: ReturnType<typeof setInterval> | null = null;
   private scrollTimerHandle: ReturnType<typeof setInterval> | null = null;
@@ -346,7 +350,7 @@ export class TrackingExperiment {
 
   private emitState(phase: Phase) {
     this.phase = phase;
-    const total = this.replayXs.length * this.config.samplePeriodMs;
+    const total = this.replayXs.length * this.replayPeriodMs;
     this.onState({
       phase,
       steps: this.trialTimerCount,
@@ -363,7 +367,6 @@ export class TrackingExperiment {
     this.trialTimerCount = 0;
     this.xs = [];
     this.ys = [];
-    this.ms = [];
     this.history = [];
     // onTrialTick raises this and only the next onScrollTick lowers it, so a
     // run stopped inside that 50 ms window leaves it set -- and the next run's
@@ -390,16 +393,16 @@ export class TrackingExperiment {
     this.emitState('recording');
   }
 
-  private discretizeModel() {
-    const ts = this.config.samplePeriodMs / 1000;
+  private discretizeModel(periodMs = this.config.samplePeriodMs) {
+    const ts = periodMs / 1000;
     const d1 = continuousPoleToDiscrete(this.simModel.P11, 0, ts);
-    const d2 = continuousPoleToDiscrete(this.simModel.P21, this.simModel.P22, ts);
+    const d2 = continuousPairToDiscrete(this.simModel.P21, this.simModel.P22, ts);
     this.activeSim = {
       p11: d1.dr,
-      d1: Math.max(1, Math.round((this.simModel.D1 * 1000) / this.config.samplePeriodMs)),
+      d1: Math.max(1, Math.round((this.simModel.D1 * 1000) / periodMs)),
       p21: d2.dr,
       p22: d2.di,
-      d2: Math.max(1, Math.round((this.simModel.D2 * 1000) / this.config.samplePeriodMs)),
+      d2: Math.max(1, Math.round((this.simModel.D2 * 1000) / periodMs)),
     };
   }
 
@@ -410,17 +413,23 @@ export class TrackingExperiment {
    * not track the pointer -- this is a playback of something that already
    * happened.
    */
-  startReplay(xs: Float64Array, ys: Float64Array) {
+  /**
+   * `samplePeriodMs` is the period the samples were recorded at. It paces the
+   * playback and discretizes the model, so a recording made at 50 ms replays
+   * at its real speed, with its real model, whatever Settings says today.
+   */
+  startReplay(xs: Float64Array, ys: Float64Array, samplePeriodMs: number) {
     if (this.active || xs.length < 2) return;
     this.active = true;
     this.startedAt = performance.now();
     this.replayXs = xs;
     this.replayYs = ys;
+    this.replayPeriodMs = samplePeriodMs;
     this.replayElapsedMs = 0;
     this.trialTimerCount = 0;
     this.history = [];
 
-    this.discretizeModel();
+    this.discretizeModel(samplePeriodMs);
     this.replayModel = this.modelResponseTo(xs);
 
     this.currentTargetY = xs[0];
@@ -439,13 +448,13 @@ export class TrackingExperiment {
    */
   private modelResponseTo(xs: Float64Array): Float64Array {
     const { p21, p22, d2 } = this.activeSim;
-    const gain = 1 - 2 * p21 + p21 * p21 + p22 * p22;
+    const gain = 1 - 2 * p21 + pairProduct(p21, p22);
     const out = new Float64Array(xs.length);
     out[0] = xs[0];
     if (xs.length > 1) out[1] = xs[0];
     for (let n = 2; n < xs.length; n++) {
       const delayed = n - d2 >= 0 ? xs[n - d2] : xs[0];
-      out[n] = 2 * p21 * out[n - 1] - (p21 * p21 + p22 * p22) * out[n - 2] + gain * delayed;
+      out[n] = 2 * p21 * out[n - 1] - pairProduct(p21, p22) * out[n - 2] + gain * delayed;
     }
     return out;
   }
@@ -455,7 +464,7 @@ export class TrackingExperiment {
     // background tab, so counting ticks makes a replay of a 44 s recording
     // crawl for minutes and its progress readout lie about where it is.
     this.replayElapsedMs = performance.now() - this.startedAt;
-    const i = Math.floor(this.replayElapsedMs / this.config.samplePeriodMs);
+    const i = Math.floor(this.replayElapsedMs / this.replayPeriodMs);
     if (i >= this.replayXs.length) {
       this.endReplay();
       return;
@@ -559,16 +568,10 @@ export class TrackingExperiment {
 
   private onSampleTick() {
     if (this.config.simulationMode !== 'none') {
-      this.currentTrackerY = this.simulate(this.config.simulationMode, this.ys);
+      this.currentTrackerY = this.simulate(this.config.simulationMode);
     }
     this.xs.push(this.currentTargetY);
     this.ys.push(this.currentTrackerY);
-
-    // The ghost runs the target through the identified model on its OWN past,
-    // so it shows what the model predicts you would have done, next to what
-    // you actually did. Driving it from this.ys would just replay you.
-    this.currentModelY = this.simulate('second', this.ms);
-    this.ms.push(this.currentModelY);
 
     // The status carries a running clock, and this is the only timer that
     // fires often enough to move it -- the trial timer ticks once every few
@@ -580,12 +583,12 @@ export class TrackingExperiment {
    * Plays the target through the identified system in place of a human hand,
    * using the discrete parameters derived in begin(). Same difference
    * equations the analysis reports, so what you see is literally the model it
-   * printed. `past` is the output history to recurse on, which lets the same
-   * code drive both the simulated tracker and the ghost.
+   * printed, recursing on the tracker's own past output.
    */
-  private simulate(mode: 'first' | 'second', past: number[]): number {
+  private simulate(mode: 'first' | 'second'): number {
     const n = this.xs.length;
-    const fallback = past === this.ms ? this.currentModelY : this.currentTrackerY;
+    const past = this.ys;
+    const fallback = this.currentTrackerY;
 
     if (mode === 'first') {
       // y[n] = p*y[n-1] + (1-p)*x[n-D]
@@ -599,19 +602,20 @@ export class TrackingExperiment {
     // y[n] = 2*p1*y[n-1] - (p1^2+p2^2)*y[n-2] + gain*x[n-D]
     const { p21, p22, d2 } = this.activeSim;
     if (n > Math.max(d2, 2) && past.length >= 2) {
-      const gain = 1 - 2 * p21 + p21 * p21 + p22 * p22;
-      return 2 * p21 * past[past.length - 1] - (p21 * p21 + p22 * p22) * past[past.length - 2] + gain * this.xs[n - d2];
+      const gain = 1 - 2 * p21 + pairProduct(p21, p22);
+      return 2 * p21 * past[past.length - 1] - pairProduct(p21, p22) * past[past.length - 2] + gain * this.xs[n - d2];
     }
     return fallback;
   }
 
   /** Appends one column of history at the scroll rate (20 Hz by default). */
   private onScrollTick() {
-    const showModel = this.config.showModel && this.config.simulationMode === 'none';
+    // No model line while recording: it gave you something to follow while
+    // being measured. Replay draws the model, after the fact.
     this.history.push({
       target: this.currentTargetY,
       tracker: this.currentTrackerY,
-      model: showModel ? this.currentModelY : null,
+      model: null,
       stepped: this.steppedThisColumn,
     });
     this.steppedThisColumn = false;

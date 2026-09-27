@@ -67,9 +67,14 @@
     <main class="deck">
       <article class="card trials-card">
         <header class="card-head split-head">
-          <h2>Trials</h2>
-          <p class="card-note">Untick a trial to leave it out of the model</p>
-          <button type="button" id="dataBtn" class="ghost" title="Save or open a recording, or read its raw samples">Recorded data&hellip;</button>
+          <!-- The open recording's name rides in the heading: the trials below
+               belong to it, and with several kept nothing else says which. -->
+          <h2 class="trials-title">Trials<span id="recordingName"></span></h2>
+          <div class="card-note trial-notes">
+            <p id="trialCountNote">No trials yet</p>
+            <p>Untick a trial to leave it out of the model</p>
+          </div>
+          <button type="button" id="dataBtn" class="ghost" title="Every run you have recorded, plus import and export">Recordings&hellip;</button>
         </header>
         <div id="filmstrip" class="filmstrip">
           <p class="empty">Trials appear here as you record, one per step.</p>
@@ -78,7 +83,16 @@
         <div class="trial-detail">
           <header class="card-head split-head">
             <h3 id="trialDetailHeading">Trial details</h3>
-            <p class="card-note" id="trialDetailNote">Select a trial to see its details</p>
+            <!-- One key for all three plots, outside them, so no line is ever
+                 drawn through it. The plots share names: Measured and Model
+                 mean the same thing in the time and frequency domains. -->
+            <ul class="legend detail-legend" id="detailLegend" aria-label="Key for the plots below" hidden>
+              <li><span class="key" style="--key: var(--series-target)"></span>Target</li>
+              <li><span class="key" style="--key: var(--series-you)"></span>Measured</li>
+              <li><span class="key" style="--key: var(--series-model)"></span><span id="keyModel">Model</span></li>
+              <li id="keyFit" hidden><span class="key key-dashed" style="--key: var(--series-model)"></span>Fit</li>
+              <li><span class="key key-dashed" style="--key: var(--plot-muted)"></span>1st-order fit</li>
+            </ul>
           </header>
           <div class="plots">
             <figure class="step-figure">
@@ -116,21 +130,37 @@
 
     <dialog id="dataDialog" class="settings">
       <header class="settings-head">
-        <h2>Recorded data</h2>
+        <h2>Recordings</h2>
       </header>
       <div class="settings-body">
-        <label class="field">
-          <span>Raw samples &middot; n, target x[n], you y[n]</span>
-          <textarea id="samplesOut" readonly rows="12" spellcheck="false"></textarea>
-        </label>
+        <p class="empty" id="libraryEmpty">Every run you record is kept here, so a reload never loses one.</p>
+        <p class="library-warning" id="libraryUnavailable" hidden>This browser is not letting the app keep recordings, so export any run you want to keep.</p>
+        <ul class="library" id="libraryList"></ul>
       </div>
       <!-- Every dialog closes the same way: secondary actions on the left of
            the footer, Done on the right. -->
       <form method="dialog" class="settings-footer">
         <div class="footer-actions">
-          <button type="button" id="saveDataBtn" class="ghost" disabled>Save recording&hellip;</button>
-          <button type="button" id="loadDataBtn" class="ghost">Open recording&hellip;</button>
+          <button type="button" id="loadDataBtn" class="ghost" title="Add a .txt recording to your recordings and open it">Import .txt&hellip;</button>
           <input id="fileInput" type="file" accept=".txt" hidden />
+        </div>
+        <button class="primary" value="close">Done</button>
+      </form>
+    </dialog>
+
+    <!-- One recording's samples, opened from its row's Data button. It stacks
+         over Recordings, and Done returns to the list. -->
+    <dialog id="samplesDialog" class="settings">
+      <header class="settings-head">
+        <h2 id="samplesTitle">Samples</h2>
+      </header>
+      <div class="settings-body">
+        <p class="samples-meta" id="samplesMeta"></p>
+        <textarea id="samplesOut" readonly rows="16" spellcheck="false" aria-label="Samples: n, target x[n], you y[n]"></textarea>
+      </div>
+      <form method="dialog" class="settings-footer">
+        <div class="footer-actions">
+          <button type="button" id="saveDataBtn" class="ghost" title="Save these samples as a .txt file">Export .txt&hellip;</button>
         </div>
         <button class="primary" value="close">Done</button>
       </form>
@@ -168,15 +198,11 @@
           </label>
         </div>
         <label class="check">
-          <input id="showModel" type="checkbox" />
-          <span>Draw the model&rsquo;s prediction while recording</span>
-        </label>
-        <label class="check">
           <input id="discretePoints" type="checkbox" />
           <span>Draw samples as dots, not lines</span>
         </label>
         <details class="advanced" id="advancedSettings">
-          <summary>Advanced &middot; self-test</summary>
+          <summary>Diagnostic self-test</summary>
           <div class="advanced-body">
             <label class="field">
               <span>Who tracks the target</span>

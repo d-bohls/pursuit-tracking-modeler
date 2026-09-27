@@ -13,9 +13,11 @@
     "validate": "tsx test/validate.ts \"test/data/reference-data.txt\"",
     "smoke-test": "node test/smoke-test.mjs",
     "model-check": "tsx test/model-check.ts",
+    "damping-check": "tsx test/damping-check.ts",
     "scroll-test": "node test/scroll-test.mjs",
     "simulation-test": "node test/simulation-test.mjs",
-    "touch-test": "node test/touch-test.mjs"
+    "touch-test": "node test/touch-test.mjs",
+    "library-test": "node test/library-test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.63.0",

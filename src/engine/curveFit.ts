@@ -1,6 +1,8 @@
 // Least-squares fitting of the 1-pole and 2-pole models: a coarse-to-fine
 // grid search for the pole(s) and delay that best reproduce the target.
 
+import { pairProduct } from './poleConversion';
+
 export interface Fit1PoleResult {
   p: number;
   D: number;
@@ -214,11 +216,14 @@ export function simulateFirstOrder(xn: ArrayLike<number>, p: number, D: number):
   return out;
 }
 
-/** y[n] = 2*p1*y[n-1] - (p1^2+p2^2)*y[n-2] + gain*x[n-D], gain fixed for unity DC. */
+/**
+ * y[n] = 2*p1*y[n-1] - a2*y[n-2] + gain*x[n-D], gain fixed for unity DC, where
+ * a2 is the product of the pair -- see pairProduct for what a negative p2 means.
+ */
 export function simulateSecondOrder(xn: ArrayLike<number>, p1: number, p2: number, D: number): Float64Array {
   const n = xn.length;
   const a1 = 2 * p1;
-  const a2 = p1 * p1 + p2 * p2;
+  const a2 = pairProduct(p1, p2);
   const gain = 1 - 2 * p1 + a2;
   const out = new Float64Array(n);
   for (let k = 0; k < n; k++) {
@@ -277,6 +282,41 @@ export function fit2PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>
     p1max = best.p1 + dp;
     p2min = Math.max(1e-6, best.p2 - dp);
     p2max = best.p2 + dp;
+    dp /= 5;
+  }
+
+  // The complex search above cannot represent two real poles -- an
+  // overdamped response -- so search those separately, as a centre c and a
+  // half-split h (poles c +/- h, stored as p2 = -h). It is kept only if it
+  // fits strictly better, so a response the complex pair already describes
+  // is identified exactly as before. h = 0 is the double pole: critical.
+  const real = fitRealPair(xn, yn, maxD);
+  return real.rms < best.rms ? real : best;
+}
+
+/** Best pair of real poles in (0, 1), same three-pass refinement as the complex search. */
+function fitRealPair(xn: ArrayLike<number>, yn: ArrayLike<number>, maxD: number): OutputErrorFit2 {
+  let best: OutputErrorFit2 = { p1: 0.5, p2: 0, D: 0, rms: Infinity };
+  let dp = 0.05;
+  let cmin = dp;
+  let cmax = 0.95;
+  let hmin = 0;
+  let hmax = 0.5;
+  for (let pass = 0; pass < 3; pass++) {
+    for (let D = 0; D <= maxD; D++) {
+      for (let c = cmin; c <= cmax + 1e-12; c += dp) {
+        for (let h = Math.max(0, hmin); h <= hmax + 1e-12; h += dp) {
+          // both poles real, positive and inside the unit circle
+          if (c - h <= 0 || c + h >= 0.999) continue;
+          const r = rmsAgainst(yn, simulateSecondOrder(xn, c, -h, D));
+          if (r < best.rms) best = { p1: c, p2: -h, D, rms: r };
+        }
+      }
+    }
+    cmin = best.p1 - dp;
+    cmax = best.p1 + dp;
+    hmin = -best.p2 - dp;
+    hmax = -best.p2 + dp;
     dp /= 5;
   }
   return best;

@@ -61,7 +61,10 @@ if (!/your identified model/.test(afterText)) fail(`readout should say it switch
 // 3. and the simulated run should visibly overshoot, since ζ=0.36 means ~29%
 // The run controls live on the plot now, and the mode lives in Settings.
 await page.locator('#settingsBtn').click();
-// The mode is a self-test now, tucked inside the Advanced disclosure.
+// Fast pace: steps come at a random 1.5-2.5 s, so the 9 s run below always
+// completes several trials. At Normal pace (3-5 s) it sometimes got none.
+await page.locator('#paceGroup button[data-pace="2000"]').click();
+// The mode is a self-test now, tucked inside the Diagnostic self-test disclosure.
 await page.locator('#advancedSettings summary').click();
 await page.selectOption('#simulationMode', 'second');
 await page.locator('#settingsDialog button[value="close"]').click();
@@ -79,7 +82,12 @@ const legend = (await page.locator('#legendYou').textContent()) ?? '';
 if (legend === 'You') fail(`the legend captions the model run's trace "You"`);
 
 // Measure overshoot directly from the recorded samples: for each step of the
-// target, how far past it did the simulated response travel?
+// target, how far past it did the simulated response travel? The samples are
+// in the newest recording's Data view.
+await page.locator('#dataBtn').click();
+await page.waitForTimeout(300);
+await page.locator('#libraryList .rec-data').first().click();
+await page.waitForTimeout(200);
 const overshoot = await page.locator('#samplesOut').evaluate((el) => {
   const rows = el.value
     .split('\n')

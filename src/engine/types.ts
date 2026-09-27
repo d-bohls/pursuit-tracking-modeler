@@ -17,7 +17,10 @@ export interface ComplexArray {
   imag: Float64Array;
 }
 
-/** Discrete-time model: y[n] - 2*P21*y[n-1] + (P21^2+P22^2)*y[n-2] = gain * x[n - D2] */
+/**
+ * Discrete-time model: y[n] - 2*P21*y[n-1] + pairProduct(P21, P22)*y[n-2] = gain * x[n - D2].
+ * P22 >= 0: poles P21 +/- j*P22. P22 < 0: real poles P21 +/- |P22| (see poleConversion.ts).
+ */
 export interface DiscreteModelParams {
   /** First-order pole. */
   P11: number;
@@ -25,6 +28,7 @@ export interface DiscreteModelParams {
   D1: number;
   /** Second-order pole, real part (or magnitude*cos(theta)). */
   P21: number;
+  /** Second-order pole: imaginary part when >= 0; when < 0, minus the half-split of two real poles. */
   P22: number;
   /** Second-order delay (samples). */
   D2: number;
