@@ -1,0 +1,9 @@
+{
+  // The Node-side checks, with Node's types. Browser tests (.mjs) drive
+  // Playwright and are not type-checked.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["*.ts"]
+}

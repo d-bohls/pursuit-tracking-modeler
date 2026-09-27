@@ -12,7 +12,9 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    // Browser code: no Node globals. The tests have their own config.
+    "types": []
   },
   "include": ["src"]
 }

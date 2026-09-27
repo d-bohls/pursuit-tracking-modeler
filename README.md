@@ -48,12 +48,11 @@ npm install
 npm run dev         # local dev server with hot reload
 npm run build       # production build into dist/
 npm test            # every check below
-npm run validate    # print the engine's analysis of the reference recording
 ```
 
 ## Tests
 
-`npm test` type-checks the app, then runs:
+`npm test` type-checks the app and the checks below, then runs:
 
 - `model-check`: the fitters recover known 1-pole and 2-pole models from
   their own simulated responses.
@@ -61,6 +60,8 @@ npm run validate    # print the engine's analysis of the reference recording
   such.
 - `smoke-test`: loads the reference recording in a real browser and checks the
   rendered model matches the engine, plus the pole editor and Settings.
+- `iphone-test`: the same in WebKit as an iPhone, the engine behind iOS
+  Safari, plus no text selection on a long press over the plot.
 - `sessions-test`: sessions are kept, restored, reopened, renamed and
   deleted.
 - `scroll-test`: the live plot scrolls at the expected rate and stays sharp.
@@ -70,7 +71,8 @@ npm run validate    # print the engine's analysis of the reference recording
 - `touch-test`: holding a finger records, and lifting it stops.
 
 The browser tests build the app, serve it locally and drive it with
-Playwright's Chromium, installed once with `npx playwright install chromium`.
+Playwright's Chromium and WebKit, installed once with
+`npx playwright install chromium webkit`.
 
 ## Project layout
 

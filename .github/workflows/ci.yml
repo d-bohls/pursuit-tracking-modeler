@@ -27,19 +27,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # The browser is cached per Playwright version; the system libraries it
-      # needs are not cacheable, so they are installed either way.
+      # The browsers are cached per Playwright version and browser list. The
+      # install skips any browser the cache already holds, and installs the
+      # system libraries, which cannot be cached, either way.
       - id: playwright
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
-      - id: browser-cache
-        uses: actions/cache@v6
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - if: steps.browser-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - if: steps.browser-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-webkit
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm test
 
   deploy:

@@ -1,12 +1,13 @@
 // End-to-end smoke test of the production build: serves it to a real
 // browser, feeds it the reference recording through the file
 // picker, and checks the rendered model matches the numbers the engine
-// produces headlessly. Catches UI wiring bugs that the Node-side validation
-// can't see.
+// produces headlessly.
 //
-//   node test/smoke-test.mjs
+// With --iphone it runs in WebKit as an iPhone, the engine behind iOS Safari.
+//
+//   node test/smoke-test.mjs [--iphone]
 
-import { chromium } from 'playwright';
+import { chromium, webkit, devices } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { serve } from './serve.mjs';
@@ -16,12 +17,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const app = await serve();
 const dataPath = join(root, 'test/data/reference-data.txt');
 
-// The UI reports the MEDIAN model -- see SIM_SOURCE in src/main.ts. This is
-// the string `npm run validate` prints for the same recording.
+// The UI reports the MEDIAN model; this is the engine's string for it.
 const EXPECTED_MEDIAN_2ND_ORDER = 'y[n]-(1.7880)y[n-1]+(0.9406)y[n-2]=(0.1526)x[n-7.5]';
 
-const browser = await chromium.launch();
-const page = await browser.newPage();
+const onIPhone = process.argv.includes('--iphone');
+const browser = await (onIPhone ? webkit : chromium).launch();
+const page = await browser.newPage(onIPhone ? devices['iPhone 13'] : {});
 
 const consoleErrors = [];
 page.on('console', (m) => {
@@ -212,6 +213,14 @@ if (paceKept !== '7.5') fail(`step interval after reload: ${paceKept}, expected 
 
 if (consoleErrors.length) fail(`console errors during run: ${consoleErrors.join(' | ')}`);
 
+// On iOS a finger held on the plot is a recording, so a long press must not
+// select its text. (The tap highlight and callout are iOS-only properties
+// that desktop WebKit does not implement, so they cannot be checked here.)
+if (onIPhone) {
+  const select = await page.locator('#stage').evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-user-select'));
+  if (select !== 'none') fail(`plot text is selectable on a long press: ${select}`);
+}
+
 
 await browser.close();
 await app.close();
@@ -219,7 +228,7 @@ await app.close();
 if (process.exitCode) {
   console.error('\nSmoke test FAILED');
 } else {
-  console.log('Smoke test passed:');
+  console.log(`Smoke test passed${onIPhone ? ' (WebKit, iPhone)' : ''}:`);
   console.log('  - page loads clean with no console errors');
   console.log('  - empty state renders before any data');
   console.log('  - 437 samples loaded through the file picker');
