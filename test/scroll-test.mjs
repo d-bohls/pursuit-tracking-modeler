@@ -82,6 +82,7 @@ const stats = await page.locator('#graph').evaluate((c) => {
     firstInkedColumn: perColumn.findIndex((n) => n > 0),
   };
 });
+
 await browser.close();
 await app.close();
 

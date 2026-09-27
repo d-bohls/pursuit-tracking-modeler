@@ -1,6 +1,7 @@
 {
   "name": "pursuit-tracking-modeler",
-  "version": "2.0.0",
+  "private": true,
+  "version": "0.1.0",
   "description": "Record yourself following a stepping target, and get a model of how you respond.",
   "type": "module",
   "engines": {
@@ -10,7 +11,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "validate": "tsx test/validate.ts \"test/data/reference-data.txt\"",
+    "validate": "tsx test/validate.ts test/data/reference-data.txt",
     "smoke-test": "node test/smoke-test.mjs",
     "model-check": "tsx test/model-check.ts",
     "damping-check": "tsx test/damping-check.ts",

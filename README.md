@@ -22,46 +22,51 @@ Identification runs **as you record**: each step response is identified the mome
 closes (~13 ms), so the model on screen firms up step by step instead of
 appearing all at once at the end.
 
-You can also load a previously recorded `test/data/reference-data.txt` file instead of running a live experiment —
-useful for re-analyzing old recordings.
+You can also import a data file
+(`test/data/reference-data.txt` is one) instead of running a
+live experiment.
 
 ## The interface
 
-- **No modal.** The plot, the identified model, and the per-response evidence
-  share one scrolling page. You can watch ζ settle while you are still
-  tracking.
-- **The plot states its own affordance.** The instruction list is gone; the
-  plot says `Click the plot to start`, then `Recording · N steps · Ms`.
-  Space bar works too.
+- **One page.** The plot, the step responses and your model share one
+  scrolling page, and the model is re-identified as each step response
+  closes, so you can watch ζ settle while you are still tracking. Only
+  Sessions and Settings open over it.
+- **The plot explains itself.** Record session and Replay sit on the plot,
+  with a few lines of help at its foot: what to do while recording, and how
+  to start and stop (the Space bar, or on a touchscreen holding the button or
+  the plot). A run ends itself after 10 step responses.
 - **Step responses are objects, not table rows.** Each step becomes a card
   with a thumbnail of the step and the response to it. Untick one and every
-  number above re-derives from what is left — outlier rejection is a decision
-  you make and see, not a heuristic that happens to you.
+  number re-derives from what is left — outlier rejection is a decision you
+  make and see, not a heuristic that happens to you. Pick one to see its step
+  response, frequency response and poles; drag the poles to explore.
 - **Fit error is measured against the step that provoked it.** Steps are drawn
-  from a 3× range of sizes, so raw pixels are not comparable between step responses:
-  on the reference recording step response 3 (9.1 px on a 39 px step) reads as better than
-  step response 2 (11.0 px on 77 px) in pixels, and far worse — 23% against 14% — as a
-  fraction of the step. Step responses are flagged at 3× the median in *both*
-  directions: a fit far worse than its peers did not measure the same system,
-  and a fit far better is just as suspect. The reference recording has one of the
-  latter, at 0.3% where every other step response sits above 10% — a step response with almost
-  no dynamics in it, contributing a confident number about nothing.
+  from a 3× range of sizes, so raw pixels are not comparable between step
+  responses: on the reference recording step 3 (9.1 px on a 39 px step) reads as
+  better than step 2 (11.0 px on 77 px) in pixels, and far worse — 23% against
+  14% — as a fraction of the step. Step responses are flagged at 3× the median
+  in *both* directions: a fit far worse than its peers did not measure the
+  same system, and a fit far better is just as suspect. The reference recording has
+  one of the latter, at 0.3% where every other step response sits above 10% —
+  a step response with almost no dynamics in it, contributing a confident
+  number about nothing.
 - **The headline is about you**, not about the polynomial: reaction delay,
-  overshoot, damping, natural frequency. `H(s)` is set as an actual fraction
-  underneath as the supporting evidence.
-- **The model can run beside you.** Replay plays a recorded run back with the
-  identified system driven by the same target on its own past, drawn as a
-  dashed line — so you can see where the model and the hand disagree. It is
-  never drawn while you record: a line to follow would change what is being
-  measured.
-- Dark mode, HiDPI-correct canvases, a resizable plot, pointer (not mouse)
-  input so a tablet works, and a data palette validated for colour-vision
-  deficiency.
-- On a wide screen the plot is a full-width row with the readout and the
-  step responses sharing the space beneath it; both cards use container queries, so
+  overshoot, damping, natural frequency. `H(s)` and `H(z)` are set as actual
+  fractions underneath as the supporting evidence.
+- **The model can run beside you.** Replay plays the session back with the
+  identified model driven by the same target, so you can see where the model
+  and the hand disagree. It is never drawn while you record: a line to follow
+  would change what is being measured.
+- **Sessions are kept.** Every session is saved in the browser (IndexedDB) and
+  the open one reopens on reload. Click a session's name to rename it; open,
+  export or delete any of them from Sessions.
+- Dark mode, HiDPI-correct canvases, pointer (not mouse) input so a phone or
+  tablet works, and a data palette validated for colour-vision deficiency.
+- On a wide screen the plot is a full-width row with the session and your
+  model sharing the space beneath it; both cards use container queries, so
   they lay themselves out by the room they actually have rather than by the
-  size of the window. Settings and the theme persist in `localStorage`;
-  recordings deliberately do not.
+  size of the window. Settings and the theme persist in `localStorage`.
 
 The recording coordinate space is fixed at 493 units (`LOGICAL_HEIGHT`) rather
 than following the canvas, so a recording's step sizes and RMS error mean the
@@ -77,6 +82,7 @@ npm run dev         # local dev server with hot reload
 npm run build       # production build into dist/
 npm run validate    # replay the reference recording through the engine, headless
 npm run model-check # verify the 2-pole model against the difference equation
+npm run damping-check    # critically damped and overdamped responses are named as such
 ```
 
 ### Troubleshooting
@@ -104,20 +110,26 @@ headlessly — plus a units sanity check.
 `npm run scroll-test` runs the **live** experiment, sweeping the mouse at a
 human pace, and measures the plot it draws: that the trace scrolls at the
 expected rate, and that each column holds a couple of pixels rather than
-hundreds. Both halves matter. The first version of `onScrollTick` scrolled by
-drawing the canvas onto *itself* (`ctx.drawImage(this.canvas, -1, 0)`), which
-composites with `source-over` — under that rule transparent source pixels
-leave the destination untouched, so nothing was ever erased. Every tick
-stamped another shifted copy over the last one, and the plot accumulated into
-an unreadable smear that crept leftward far slower than 1px/tick. The fix is
-the offscreen buffer in `src/ui/experiment.ts`; this test is what keeps it
-that way. Note that analysis correctness cannot catch this — the numbers were
-right the whole time the plot was unreadable.
+hundreds. Both halves matter: scrolling a canvas by drawing it onto itself
+(`ctx.drawImage(this.canvas, -1, 0)`) composites with `source-over`, under
+which transparent pixels leave the destination untouched, so nothing is ever
+erased and the plot smears into an unreadable band that creeps far slower
+than it should. The plot is redrawn from a history buffer instead, and this
+test keeps it that way. Analysis correctness cannot catch this kind of
+failure: the numbers stay right while the plot is unreadable.
 
 `npm run simulation-test` checks that identification actually reaches the
 simulation: that ζ moves from the demo model's 0.62 to the recording's 0.126,
 that the readout says which model is loaded, and that a simulated run
-overshoots ~67% as that ζ predicts.
+overshoots ~67% as that ζ predicts. A simulation playing some other system
+than the identified one would fail nothing else, so this test is what notices.
+It opens the page with `?selftest`, which shows the self-test controls in
+Settings; they are hidden otherwise.
+
+`npm run touch-test` holds a finger on Record and on the plot, and checks that
+lifting it stops the run. `npm run sessions-test` checks that sessions are
+kept across reloads, reopen with their notes and unticked step responses, and
+can be renamed and deleted.
 
 The browser tests need Playwright, which isn't a default dependency because
 of its size:
@@ -142,14 +154,19 @@ src/
     dataFormat.ts     reads/writes the "All Samples" text format
   ui/
     experiment.ts     the live canvas-based tracking experiment
-    plotting.ts       frequency-response and pole-plot canvas drawing
+    plotting.ts       step-response, frequency-response and pole-plot drawing
+    sessions.ts       sessions kept in the browser's IndexedDB
   main.ts             wires the DOM to the engine
 test/
   serve.mjs           builds and serves the app for the browser tests
-  validate.ts         Node-side validation against a real recording
+  validate.ts         Node-side validation against the reference recording
   model-check.ts      checks the 2-pole closed form against the difference equation
+  damping-check.ts    critical and overdamped responses are named correctly
   smoke-test.mjs      drives the production build in a real browser
   scroll-test.mjs     measures the live experiment's scrolling plot
   simulation-test.mjs verifies simulation replays the identified model
+  touch-test.mjs      holding and lifting a finger records and stops
+  sessions-test.mjs   sessions are kept, reopened, renamed and deleted
+  data/reference-data.txt  a real recording, used by validate and the tests
 ```
 

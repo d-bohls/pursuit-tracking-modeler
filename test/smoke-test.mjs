@@ -194,6 +194,7 @@ if (lightSurface === darkSurface) fail(`plot surface did not follow the theme (b
 
 if (consoleErrors.length) fail(`console errors during run: ${consoleErrors.join(' | ')}`);
 
+
 await browser.close();
 await app.close();
 

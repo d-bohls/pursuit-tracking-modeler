@@ -481,6 +481,8 @@ button.primary[data-recording="true"] {
 .card-head h2 { margin: 0; font-size: 0.95rem; letter-spacing: -0.01em; }
 .card-head h3 { margin: 0; font-size: 0.9rem; letter-spacing: -0.01em; }
 .card-note { margin: 0; font-size: 0.75rem; color: var(--ink-muted); }
+/* Nothing to say yet: no empty row under the heading. */
+.card-note:empty { display: none; }
 /* Title left, optional action right, and the note centred on the card between
  * them. Equal outer tracks keep it on the true centre whatever the ends measure. */
 .split-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
@@ -496,10 +498,14 @@ button.primary[data-recording="true"] {
 #sessionName { cursor: pointer; border-radius: 4px; }
 #sessionName:hover { color: var(--ink-2); text-decoration: underline dotted; text-underline-offset: 3px; }
 #sessionName:focus-visible { outline: 2px solid var(--series-target); outline-offset: 1px; }
+/* While renaming, the heading takes the header's whole row, and the notes
+ * beside it step aside, so a long name has room. */
+.session-title:has(#sessionNameInput:not([hidden])) { grid-column: 1 / -1; }
+.split-head:has(#sessionNameInput:not([hidden])) .response-notes { display: none; }
 #sessionNameInput {
   font: inherit;
   font-weight: 500;
-  width: calc(100% - 7.5em);
+  width: calc(100% - 5.5em);
   min-width: 8em;
   margin: 0;
   padding: 0 4px;
@@ -579,7 +585,7 @@ button.primary[data-recording="true"] {
 
 /* A self-test run's card is marked as such, so model results can never be
  * mistaken for yours at a glance -- the heading says it, the edge shows it. */
-.readout-card[data-source="model"] { border-left: 3px dashed var(--series-model); }
+.readout-card[data-source="model"] { border-left: 3px solid var(--series-model); }
 
 /* Continuous and discrete models as peers, each a labelled result. */
 .model { margin-top: 14px; }
@@ -736,6 +742,8 @@ button.primary[data-recording="true"] {
   padding: 0.35rem 0.5rem;
 }
 .field textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; resize: vertical; }
+/* Five digits at most: sized to them, not stretched across the dialog. */
+.field input[type="number"] { align-self: flex-start; width: 7rem; font-variant-numeric: tabular-nums; }
 
 .check { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--ink-2); }
 .check input { accent-color: var(--ink); }

@@ -25,7 +25,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-await page.goto(app.url);
+await page.goto(`${app.url}?selftest`);
 
 let failed = false;
 const fail = (m) => {

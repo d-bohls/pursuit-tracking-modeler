@@ -31,7 +31,7 @@
         <ul class="legend">
           <li><span class="swatch swatch-target"></span>Target</li>
           <li><span class="swatch swatch-you"></span><span id="legendYou">You</span></li>
-          <li class="legend-model" hidden><span class="swatch swatch-model"></span>Model prediction</li>
+          <li class="legend-model" hidden><span class="swatch swatch-model"></span>Model</li>
         </ul>
         <p class="status" id="status" role="status" aria-live="polite">Ready</p>
       </div>
@@ -128,7 +128,7 @@
         <h2>Recorded sessions</h2>
       </header>
       <div class="settings-body">
-        <p class="empty" id="sessionsEmpty">Every session you record is kept here, so a reload never loses one.</p>
+        <p class="empty" id="sessionsEmpty">Recorded sessions are saved here.</p>
         <p class="sessions-warning" id="sessionsUnavailable" hidden>This browser is not letting the app keep sessions, so export any session you want to keep.</p>
         <ul class="session-list" id="sessionList"></ul>
       </div>
@@ -177,9 +177,9 @@
         <div class="field">
           <span>Step interval pace</span>
           <div class="segmented" id="paceGroup" role="radiogroup" aria-label="Step interval pace">
-            <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast &middot; 2&nbsp;s</button>
-            <button type="button" role="radio" data-pace="4000" aria-checked="true">Normal &middot; 4&nbsp;s</button>
-            <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow &middot; 8&nbsp;s</button>
+            <button type="button" role="radio" data-pace="2000" aria-checked="false">Fast (2&nbsp;s)</button>
+            <button type="button" role="radio" data-pace="4000" aria-checked="true">Normal (4&nbsp;s)</button>
+            <button type="button" role="radio" data-pace="8000" aria-checked="false">Slow (8&nbsp;s)</button>
           </div>
         </div>
         <label class="field">
@@ -194,7 +194,8 @@
           <input id="discretePoints" type="checkbox" />
           <span>Draw samples as dots, not lines</span>
         </label>
-        <details class="advanced" id="advancedSettings">
+        <!-- For testing only: shown when the page is opened with ?selftest. -->
+        <details class="advanced" id="advancedSettings" hidden>
           <summary>Diagnostic self-test</summary>
           <div class="advanced-body">
             <label class="field">

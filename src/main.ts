@@ -116,8 +116,7 @@ const sessionNameInput = $<HTMLInputElement>('sessionNameInput');
  * than whichever is newest. Browser storage: losing it only means the newest
  * is reopened instead, so a failure is ignored.
  */
-// The key keeps its old name, so the session open before the rename still reopens.
-const OPEN_KEY = 'tracking-lab.openRecording';
+const OPEN_KEY = 'pursuit-tracking-modeler.openSession';
 function rememberOpen(id: number | null) {
   try {
     if (id === null) localStorage.removeItem(OPEN_KEY);
@@ -267,7 +266,7 @@ function clamp(v: number, min: number, max: number) {
 
 /* ------------------------------------------------------------ persistence */
 
-const STORE_KEY = 'tracking-lab.settings';
+const STORE_KEY = 'pursuit-tracking-modeler.settings';
 
 /** 'system' follows the OS; the other two pin the page regardless of it. */
 type ThemeChoice = 'light' | 'dark' | 'system';
@@ -284,8 +283,6 @@ const DEFAULT_SETTINGS = {
 
 interface StoredSettings {
   stepPeriodMs?: number;
-  /** What stepPeriodMs was saved as before the rename. */
-  trialPeriodMs?: number;
   samplePeriodMs?: number;
   discretePoints?: boolean;
   theme?: ThemeChoice;
@@ -319,11 +316,15 @@ function saveSettings() {
   }
 }
 
+// The self-test lets a model do the tracking. It is for testing the pipeline,
+// not for use, so its controls only appear when the page is opened with
+// ?selftest.
+$<HTMLDetailsElement>('advancedSettings').hidden = !new URLSearchParams(location.search).has('selftest');
+
 /** Applies stored settings to the controls, before anything reads them. */
 function applyStoredSettings() {
   const s = readSettings();
-  const stepPeriodMs = s.stepPeriodMs ?? s.trialPeriodMs;
-  if (typeof stepPeriodMs === 'number') stepPeriodInput.value = String(clamp(stepPeriodMs, 1000, 10000));
+  if (typeof s.stepPeriodMs === 'number') stepPeriodInput.value = String(clamp(s.stepPeriodMs, 1000, 10000));
   if (typeof s.samplePeriodMs === 'number') samplePeriodInput.value = String(clamp(s.samplePeriodMs, 50, 500));
   // The self-test mode is deliberately NOT restored. Left on a model, it
   // would make the next visit's Record a model run -- every session starts
@@ -427,10 +428,28 @@ function flash(message: string) {
   stageFlash.hidden = false;
   placeFlash();
 }
-// It stays up, so it has to follow the layout: the gap it is centred in moves
-// whenever the plot changes size.
+/**
+ * At rest the help sits centred in the gap between the bottom of Replay and
+ * the bottom of the plot. While a run is going the buttons are gone and the
+ * stylesheet keeps it at the foot of the plot.
+ */
+function placeGuide() {
+  if (stageActions.hidden) {
+    stageGuide.style.top = stageGuide.style.bottom = stageGuide.style.transform = '';
+    return;
+  }
+  const stage = stageEl.getBoundingClientRect();
+  const above = replayBtn.getBoundingClientRect().bottom;
+  stageGuide.style.top = `${(above + stage.bottom) / 2 - stage.top}px`;
+  stageGuide.style.bottom = 'auto';
+  stageGuide.style.transform = 'translate(-50%, -50%)';
+}
+
+// Both follow the layout: the gaps they are centred in move whenever the plot
+// changes size.
 new ResizeObserver(() => {
   if (!stageFlash.hidden) placeFlash();
+  placeGuide();
 }).observe(stageEl);
 
 /**
@@ -573,6 +592,7 @@ function renderGuide(phase: ExperimentState['phase']) {
     ];
   }
   setList(stageGuide, items);
+  placeGuide();
 }
 
 /**
@@ -1264,8 +1284,12 @@ recordBtn.addEventListener('click', (e) => {
 // response, and the identified model's response to the same target. It is a
 // playback, so nothing is recorded and the analysis is left alone.
 replayBtn.addEventListener('click', () => {
-  // aria-disabled does not block clicks the way disabled does, so refuse here.
-  if (replayBtn.getAttribute('aria-disabled') === 'true') return;
+  // aria-disabled does not block clicks the way disabled does, so refuse here
+  // -- and say why, since the tooltip that explains it never shows on touch.
+  if (replayBtn.getAttribute('aria-disabled') === 'true') {
+    statusEl.textContent = replayBtn.title;
+    return;
+  }
   if (!lastSamples || experiment.isActive()) return;
   plotSource = analysisSource;
   experiment.startReplay(lastSamples.xs, lastSamples.ys, lastSamples.samplePeriodMs);
@@ -1536,8 +1560,7 @@ function whoLabel(session: Session): string {
 
 function statsLabel(s: SessionSummary | null): string {
   if (!s) return '';
-  // Old saves counted them under `trials`.
-  const n = s.responses ?? (s as { trials?: number }).trials ?? 0;
+  const n = s.responses;
   const count = `${n} step${n === 1 ? '' : 's'}`;
   if (s.included === 0) return `${count} · all excluded`;
   return `${count} · ζ ${s.zeta.toFixed(2)} · ${s.delayMs.toFixed(0)} ms delay`;

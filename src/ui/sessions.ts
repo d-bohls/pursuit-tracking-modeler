@@ -5,7 +5,7 @@ import type { SimulationMode } from './experiment';
 
 /** The numbers a list row shows, stored so the list never re-identifies anything. */
 export interface SessionSummary {
-  /** Step responses in the session. Sessions saved before the rename have `trials` instead. */
+  /** Step responses in the session. */
   responses: number;
   /** Step responses still in the model; the numbers below are NaN when this is 0. */
   included: number;
@@ -34,9 +34,8 @@ export interface Session {
 
 export type NewSession = Omit<Session, 'id'>;
 
-const DB_NAME = 'tracking-lab';
-// Named before sessions were called sessions; renaming it would strand every saved one.
-const STORE = 'recordings';
+const DB_NAME = 'pursuit-tracking-modeler';
+const STORE = 'sessions';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

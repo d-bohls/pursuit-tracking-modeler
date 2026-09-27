@@ -702,8 +702,16 @@ export class TrackingExperiment {
       if (this.history[i].stepped) divider(xAt(i));
     }
     // And where the run began, until it scrolls off: the edge of the data,
-    // which otherwise just stops in mid-air.
-    if (this.historyDropped === 0 && xAt(0) >= 0) divider(xAt(0));
+    // which otherwise just stops in mid-air. Dotted and fainter, so it is not
+    // read as one more step.
+    if (this.historyDropped === 0 && xAt(0) >= 0) {
+      ctx.strokeStyle = this.palette.axis;
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.lineCap = 'round';
+      ctx.setLineDash([0.1 * dpr, 4 * dpr]);
+      divider(xAt(0));
+      ctx.lineCap = 'butt';
+    }
     ctx.setLineDash([]);
 
     const series = (pick: (f: Frame) => number | null, color: string, lw: number, dash: number[]) => {
