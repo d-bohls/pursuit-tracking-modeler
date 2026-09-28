@@ -3,7 +3,7 @@
 
 import { splitStepResponses, padResponses } from './stepResponses';
 import { deconvolve } from './dsp';
-import { fit1PoleOutputError, fit2PoleOutputError } from './curveFit';
+import { fit1Pole, fit1PoleOutputError, fit2PoleOutputError, refine2Pole } from './curveFit';
 import { discretePairToContinuous, discretePoleToContinuous, pairNaturalFrequency, pairProduct } from './poleConversion';
 import type { ContinuousModelParams, DiscreteModelParams, StepResponse } from './types';
 
@@ -153,6 +153,41 @@ export function aggregateResponses(responses: StepResponseAnalysis[], samplePeri
   };
 
   return { averageDiscrete, averageContinuous, medianDiscrete, medianContinuous };
+}
+
+/**
+ * One model fitted to several step responses at once: the pole pair and
+ * delay that minimise the error across all of them together. Each response's
+ * error is taken relative to its step size, so a big step counts no more than
+ * a small one. The alternative to the median of their separate fits, which
+ * can combine into a pole no single step response had.
+ */
+export function jointModel(
+  responses: StepResponseAnalysis[],
+  samplePeriodMs: number,
+): { discrete: DiscreteModelParams; continuous: ContinuousModelParams } {
+  const scaled = responses.filter((t) => t.stepSize > 0);
+  const targets = scaled.map((t) => ({
+    xn: t.response.xn,
+    yn: t.response.yn,
+    weight: 1 / (t.stepSize * t.stepSize * scaled.length),
+  }));
+  const fit1 = fit1Pole(targets);
+  // Started from each response's own fit and their median: the joint optimum
+  // lies among them, and a search from scratch is too slow to run mid-recording.
+  const median = aggregateResponses(scaled, samplePeriodMs).medianDiscrete;
+  const fit2 = refine2Pole(targets, [
+    ...scaled.map((t) => ({ p1: t.discrete.P21, p2: t.discrete.P22, D: t.discrete.D2 })),
+    { p1: median.P21, p2: median.P22, D: Math.floor(median.D2) },
+    { p1: median.P21, p2: median.P22, D: Math.ceil(median.D2) },
+  ]);
+  const ts = samplePeriodMs / 1000;
+  const c1 = discretePoleToContinuous(fit1.p, 0, ts);
+  const c2 = discretePairToContinuous(fit2.p1, fit2.p2, ts);
+  return {
+    discrete: { P11: fit1.p, D1: fit1.D, P21: fit2.p1, P22: fit2.p2, D2: fit2.D },
+    continuous: { P11: c1.cr, D1: fit1.D * ts, P21: c2.cr, P22: c2.ci, D2: fit2.D * ts },
+  };
 }
 
 export function analyzeExperiment(rawXs: Float64Array, rawYs: Float64Array, samplePeriodMs: number): AnalysisResult {

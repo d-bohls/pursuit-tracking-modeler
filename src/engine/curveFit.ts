@@ -64,14 +64,45 @@ export function simulateSecondOrder(xn: ArrayLike<number>, p1: number, p2: numbe
   return out;
 }
 
-function rmsAgainst(yn: ArrayLike<number>, sim: Float64Array): number {
-  let s = 0;
-  for (let k = 0; k < sim.length; k++) s += (yn[k] - sim[k]) ** 2;
-  return Math.sqrt(s / sim.length);
+/**
+ * What a fit is scored against: one or more recorded responses, each with a
+ * weight on its mean squared error. One target with weight 1 is the ordinary
+ * single-response fit; several are a joint fit of one model to all of them.
+ */
+export interface FitTarget {
+  xn: ArrayLike<number>;
+  yn: ArrayLike<number>;
+  weight: number;
+}
+
+/** sqrt of the weighted sum of mean squared errors: the RMS, for one target of weight 1. */
+function scoreAgainst(targets: FitTarget[], simulate: (xn: ArrayLike<number>) => Float64Array): number {
+  let total = 0;
+  for (const { xn, yn, weight } of targets) {
+    const sim = simulate(xn);
+    let s = 0;
+    for (let k = 0; k < sim.length; k++) s += (yn[k] - sim[k]) ** 2;
+    total += (weight * s) / sim.length;
+  }
+  return Math.sqrt(total);
+}
+
+/** The longest delay searched: 20 samples, and no more than half the shortest response. */
+function maxDelayFor(targets: FitTarget[]) {
+  const shortest = Math.min(...targets.map((t) => t.xn.length));
+  return Math.max(1, Math.min(20, Math.floor(shortest / 2)));
 }
 
 export function fit1PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>): OutputErrorFit1 {
-  const maxD = Math.max(1, Math.min(20, Math.floor(xn.length / 2)));
+  return fit1Pole([{ xn, yn, weight: 1 }]);
+}
+
+export function fit2PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>): OutputErrorFit2 {
+  return fit2Pole([{ xn, yn, weight: 1 }]);
+}
+
+export function fit1Pole(targets: FitTarget[]): OutputErrorFit1 {
+  const maxD = maxDelayFor(targets);
   let best: OutputErrorFit1 = { p: 0, D: 0, rms: Infinity };
   let dp = 0.05;
   let pmin = 0;
@@ -79,7 +110,7 @@ export function fit1PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>
   for (let pass = 0; pass < 3; pass++) {
     for (let D = 0; D <= maxD; D++) {
       for (let p = Math.max(0, pmin); p <= Math.min(0.999, pmax) + 1e-12; p += dp) {
-        const r = rmsAgainst(yn, simulateFirstOrder(xn, p, D));
+        const r = scoreAgainst(targets, (xn) => simulateFirstOrder(xn, p, D));
         if (r < best.rms) best = { p, D, rms: r };
       }
     }
@@ -90,8 +121,8 @@ export function fit1PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>
   return best;
 }
 
-export function fit2PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>): OutputErrorFit2 {
-  const maxD = Math.max(1, Math.min(20, Math.floor(xn.length / 2)));
+export function fit2Pole(targets: FitTarget[]): OutputErrorFit2 {
+  const maxD = maxDelayFor(targets);
   let best: OutputErrorFit2 = { p1: 0, p2: 0.05, D: 0, rms: Infinity };
   let dp = 0.05;
   let p1min = -0.95;
@@ -103,7 +134,7 @@ export function fit2PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>
       for (let p1 = p1min; p1 <= p1max + 1e-12; p1 += dp) {
         for (let p2 = Math.max(1e-6, p2min); p2 <= p2max + 1e-12; p2 += dp) {
           if (p1 * p1 + p2 * p2 >= 0.999) continue; // keep the pole inside the unit circle
-          const r = rmsAgainst(yn, simulateSecondOrder(xn, p1, p2, D));
+          const r = scoreAgainst(targets, (xn) => simulateSecondOrder(xn, p1, p2, D));
           if (r < best.rms) best = { p1, p2, D, rms: r };
         }
       }
@@ -120,12 +151,66 @@ export function fit2PoleOutputError(xn: ArrayLike<number>, yn: ArrayLike<number>
   // half-split h (poles c +/- h, stored as p2 = -h). It is kept only if it
   // fits strictly better, so a response the complex pair already describes
   // is identified exactly as before. h = 0 is the double pole: critical.
-  const real = fitRealPair(xn, yn, maxD);
+  const real = fitRealPair(targets, maxD);
   return real.rms < best.rms ? real : best;
 }
 
+/**
+ * A 2-pole fit started from candidate models rather than searched from
+ * scratch: the candidate that scores best against the targets is refined
+ * locally, to the same final resolution as fit2Pole. For a joint fit the
+ * candidates are the responses' own fits, and the joint optimum lies among
+ * them; this finds it in a fraction of the time a full search takes, which
+ * matters while a recording is running.
+ */
+export function refine2Pole(
+  targets: FitTarget[],
+  candidates: Array<{ p1: number; p2: number; D: number }>,
+): OutputErrorFit2 {
+  const maxD = maxDelayFor(targets);
+  const score = (p1: number, p2: number, D: number) =>
+    scoreAgainst(targets, (xn) => simulateSecondOrder(xn, p1, p2, D));
+  let best: OutputErrorFit2 = { p1: 0, p2: 0.05, D: 0, rms: Infinity };
+  for (const c of candidates) {
+    const D = Math.min(maxD, Math.max(0, Math.round(c.D)));
+    const r = score(c.p1, c.p2, D);
+    if (r < best.rms) best = { p1: c.p1, p2: c.p2, D, rms: r };
+  }
+  // Near critical damping the best model may be on either side of the
+  // complex/real boundary, so refine both ways there.
+  const start = best;
+  for (const kind of start.p2 >= 0.05 ? ['complex'] : start.p2 <= -0.05 ? ['real'] : ['complex', 'real']) {
+    let cur = start;
+    for (const dp of [0.01, 0.002]) {
+      const from = cur;
+      for (let D = Math.max(0, from.D - 2); D <= Math.min(maxD, from.D + 2); D++) {
+        for (let i = -5; i <= 5; i++) {
+          for (let j = -5; j <= 5; j++) {
+            let p1: number;
+            let p2: number;
+            if (kind === 'complex') {
+              p1 = from.p1 + i * dp;
+              p2 = Math.max(1e-6, Math.abs(from.p2) + j * dp);
+              if (p1 * p1 + p2 * p2 >= 0.999) continue;
+            } else {
+              const h = Math.max(0, -Math.min(0, from.p2) + j * dp);
+              p1 = from.p1 + i * dp;
+              p2 = -h;
+              if (p1 - h <= 0 || p1 + h >= 0.999) continue;
+            }
+            const r = score(p1, p2, D);
+            if (r < cur.rms) cur = { p1, p2, D, rms: r };
+          }
+        }
+      }
+    }
+    if (cur.rms < best.rms) best = cur;
+  }
+  return best;
+}
+
 /** Best pair of real poles in (0, 1), same three-pass refinement as the complex search. */
-function fitRealPair(xn: ArrayLike<number>, yn: ArrayLike<number>, maxD: number): OutputErrorFit2 {
+function fitRealPair(targets: FitTarget[], maxD: number): OutputErrorFit2 {
   let best: OutputErrorFit2 = { p1: 0.5, p2: 0, D: 0, rms: Infinity };
   let dp = 0.05;
   let cmin = dp;
@@ -138,7 +223,7 @@ function fitRealPair(xn: ArrayLike<number>, yn: ArrayLike<number>, maxD: number)
         for (let h = Math.max(0, hmin); h <= hmax + 1e-12; h += dp) {
           // both poles real, positive and inside the unit circle
           if (c - h <= 0 || c + h >= 0.999) continue;
-          const r = rmsAgainst(yn, simulateSecondOrder(xn, c, -h, D));
+          const r = scoreAgainst(targets, (xn) => simulateSecondOrder(xn, c, -h, D));
           if (r < best.rms) best = { p1: c, p2: -h, D, rms: r };
         }
       }

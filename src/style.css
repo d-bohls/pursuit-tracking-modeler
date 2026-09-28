@@ -188,6 +188,13 @@ button.primary[data-recording="true"] {
 }
 .segmented button + button { border-left: 1px solid var(--line); }
 .segmented button[aria-checked="true"] { background: var(--ink); color: var(--card); font-weight: 600; }
+.segmented[hidden] { display: none; }
+.segmented.compact button { padding: 0.2rem 0.6rem; font-size: 0.78rem; }
+.segmented button:disabled { cursor: not-allowed; opacity: 0.55; }
+/* The model container's header: the fit switch in the middle, the note on
+ * the right, under both when the card is narrow. */
+.split-head > .segmented { justify-self: center; }
+.split-head .readout-note { grid-column: 3; text-align: right; }
 
 /* ----------------------------------------------------------------- stage */
 
@@ -540,6 +547,8 @@ button.primary[data-recording="true"] {
 @container (max-width: 500px) {
   .split-head { grid-template-columns: minmax(0, 1fr) auto; }
   .split-head .card-note, .split-head .detail-legend { grid-row: 2; grid-column: 1 / -1; }
+  .split-head .readout-note { text-align: center; }
+  .split-head > .segmented { justify-self: end; }
 }
 
 /* The detail plots belong to the step response you picked above them, so they share

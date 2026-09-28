@@ -19,6 +19,8 @@ const dataPath = join(root, 'test/data/reference-data.txt');
 
 // The UI reports the MEDIAN model; this is the engine's string for it.
 const EXPECTED_MEDIAN_2ND_ORDER = 'y[n]-(1.7880)y[n-1]+(0.9406)y[n-2]=(0.1526)x[n-7.5]';
+// One model fitted to all ten at once, the other way Settings can make it.
+const EXPECTED_JOINT_2ND_ORDER = 'y[n]-(1.7880)y[n-1]+(0.9421)y[n-2]=(0.1541)x[n-8]';
 
 const onIPhone = process.argv.includes('--iphone');
 const browser = await (onIPhone ? webkit : chromium).launch();
@@ -138,6 +140,25 @@ await page.waitForTimeout(300);
 if ((await modelOf()) !== before) {
   fail('re-including the response did not restore the model');
 }
+
+// 6b. The model container's switch makes the model one joint fit instead,
+// and back; it is kept with the session.
+const setModelFit = (fit) => page.locator(`#modelFitGroup button[data-fit="${fit}"]`).click();
+if (await page.locator('#modelFitGroup').isHidden()) fail('the fit switch is hidden while the Model card is selected');
+await setModelFit('joint');
+if ((await modelOf()) !== EXPECTED_JOINT_2ND_ORDER) {
+  fail(`joint model mismatch.\n  expected: ${EXPECTED_JOINT_2ND_ORDER}\n  got: ${await modelOf()}`);
+}
+if ((await page.locator('#readoutHeading').textContent()) !== 'Joint model') fail('the joint model is not headed "Joint model"');
+await page.waitForTimeout(300);
+await page.reload();
+await page.waitForTimeout(800);
+if ((await modelOf()) !== EXPECTED_JOINT_2ND_ORDER) fail('the joint fit was not kept with the session across a reload');
+await setModelFit('median');
+if ((await modelOf()) !== before) fail('switching back to the median did not restore the median model');
+await page.locator('.response-card:not(.model-card) .response-inspect').first().click();
+if (!(await page.locator('#modelFitGroup').isHidden())) fail('the fit switch shows while a step is selected');
+await page.locator('.model-card .response-inspect').click();
 
 // 7. the plots actually drew something (non-blank canvases)
 // .first(): the sparkline selector matches every step response card, and a bare
@@ -280,6 +301,7 @@ if (process.exitCode) {
   console.log('  - 10 response cards rendered');
   console.log(`  - median model matches engine output: ${EXPECTED_MEDIAN_2ND_ORDER}`);
   console.log('  - excluding and restoring a response re-derives the model');
+  console.log(`  - the joint fit setting gives ${EXPECTED_JOINT_2ND_ORDER}`);
   console.log('  - the Model card is last and selected, and selecting a step shows its own model');
   console.log('  - the model pole can be adjusted, is kept across a reload, and goes back to the fit');
   console.log('  - step, frequency, pole and sparkline canvases drew, and follow the theme');

@@ -28,7 +28,9 @@ frequency, as continuous- and discrete-time transfer functions.
 - **Replay** plays the session back with the identified model driven by the
   same target, so you can see where the model and your hand disagree.
 - Each step becomes a card with a thumbnail, and the last card, **Model**, is
-  the median of the ticked steps. Untick a step and the model re-derives from
+  the model of the ticked steps: the median of their own fits, or one model
+  fitted to all of them together, switched in the model container and kept
+  with the session. Untick a step and the model re-derives from
   the rest; steps that fit more than 3x worse or better than the median are
   marked ⚠.
 - Pick a card to see its model, step response, frequency response and poles.

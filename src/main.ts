@@ -20,7 +20,14 @@ import {
   type Session,
   type SessionSummary,
 } from './ui/sessions';
-import { analyzeStepResponse, aggregateResponses, dampingMetrics, dampingCharacter, type StepResponseAnalysis } from './engine/analysis';
+import {
+  analyzeStepResponse,
+  aggregateResponses,
+  dampingMetrics,
+  dampingCharacter,
+  jointModel,
+  type StepResponseAnalysis,
+} from './engine/analysis';
 import { simulateSecondOrder } from './engine/curveFit';
 import { discretePairToContinuous } from './engine/poleConversion';
 import { errorPctOf, outlierBounds, outlierKindOf } from './engine/outliers';
@@ -76,6 +83,13 @@ const excluded = new Set<number>();
 let selected: number | 'model' = 'model';
 /** The model's pole pair as dragged on the Model card, kept with the session. */
 let adjustedPole: { p1: number; p2: number } | null = null;
+/**
+ * How the session's model comes from its step responses: the median of
+ * each one's own fit, or one model fitted to them all. Kept with the session;
+ * a new one starts on the median.
+ */
+let modelFit: 'median' | 'joint' = 'median';
+const modelFitGroup = $<HTMLDivElement>('modelFitGroup');
 /** The samples on screen, and the period they were recorded at -- which paces a replay. */
 let lastSamples: { xs: Float64Array; ys: Float64Array; samplePeriodMs: number } | null = null;
 let identifiedYet = false;
@@ -218,6 +232,7 @@ function updateActionAvailability() {
   const running = experiment.isActive();
   const hasRun = !!lastSamples && lastSamples.xs.length >= 2;
   replayBtn.setAttribute('aria-disabled', String(running || !hasRun));
+  syncModelFitGroup();
   // The settings would change the sampling under a run that is using it.
   // aria-disabled, like Replay, so the tooltip saying why still shows.
   settingsBtn.setAttribute('aria-disabled', String(running));
@@ -284,6 +299,7 @@ function clearAnalysis(samplePeriodMs: number, source: SimulationMode) {
   setSessionName('');
   selected = 'model';
   adjustedPole = null;
+  modelFit = 'median';
   analysisSamplePeriodMs = samplePeriodMs;
   analysisSource = source;
   pendingReset = false;
@@ -320,17 +336,37 @@ function renderResults() {
  * what Replay and the self-test play back.
  */
 function currentModel() {
-  const included = includedResponses();
-  if (included.length === 0) return null;
-  const agg = aggregateResponses(included, analysisSamplePeriodMs);
-  if (!adjustedPole) return { discrete: agg.medianDiscrete, continuous: agg.medianContinuous, adjusted: false };
+  const fit = fittedModel();
+  if (!fit) return null;
+  if (!adjustedPole) return { ...fit, adjusted: false };
   const { p1, p2 } = adjustedPole;
   const c = discretePairToContinuous(p1, p2, analysisSamplePeriodMs / 1000);
   return {
-    discrete: { ...agg.medianDiscrete, P21: p1, P22: p2 },
-    continuous: { ...agg.medianContinuous, P21: c.cr, P22: c.ci },
+    discrete: { ...fit.discrete, P21: p1, P22: p2 },
+    continuous: { ...fit.continuous, P21: c.cr, P22: c.ci },
     adjusted: true,
+    method: fit.method,
   };
+}
+
+/** The last joint fit, and the step responses it was fitted to. */
+let jointCache: { from: StepResponseAnalysis[]; periodMs: number; model: ReturnType<typeof jointModel> } | null = null;
+
+/** The model as fitted from the ticked step responses, by the chosen method. */
+function fittedModel() {
+  const included = includedResponses();
+  if (included.length === 0) return null;
+  if (modelFit === 'joint') {
+    const cached =
+      jointCache &&
+      jointCache.periodMs === analysisSamplePeriodMs &&
+      jointCache.from.length === included.length &&
+      jointCache.from.every((t, i) => t === included[i]);
+    if (!cached) jointCache = { from: included, periodMs: analysisSamplePeriodMs, model: jointModel(included, analysisSamplePeriodMs) };
+    return { ...jointCache!.model, method: 'joint' as const };
+  }
+  const agg = aggregateResponses(included, analysisSamplePeriodMs);
+  return { discrete: agg.medianDiscrete, continuous: agg.medianContinuous, method: 'median' as const };
 }
 
 function pushModelToSimulation() {
@@ -340,7 +376,22 @@ function pushModelToSimulation() {
   renderSimModelInfo();
 }
 
+/**
+ * The fit switch: only while the Model card is selected, since a step shows
+ * its own fit, and fixed during a run, which is still collecting steps.
+ */
+function syncModelFitGroup() {
+  modelFitGroup.hidden = selected !== 'model' || includedResponses().length === 0;
+  const running = experiment.isActive();
+  for (const b of modelFitGroup.querySelectorAll('button')) {
+    b.setAttribute('aria-checked', String(b.dataset.fit === modelFit));
+    b.disabled = running;
+  }
+  modelFitGroup.title = running ? 'Available when this run stops' : '';
+}
+
 function renderReadout() {
+  syncModelFitGroup();
   drawReadout({
     responses,
     excluded,
@@ -516,9 +567,12 @@ function fillModelCard() {
     `<span class="name">Model</span><canvas></canvas>` +
     `<span class="response-stats"><span>${d ? `ζ ${zeta.toFixed(2)}` : '—'}</span>` +
     `<span>${included.length} step${included.length === 1 ? '' : 's'}</span></span>`;
-  inspect.title = d
-    ? `The median of the ${included.length} ticked step response${included.length === 1 ? '' : 's'}`
-    : 'Tick at least one step response to build the model';
+  const ticked = `${included.length} ticked step response${included.length === 1 ? '' : 's'}`;
+  inspect.title = !d
+    ? 'Tick at least one step response to build the model'
+    : model!.method === 'joint'
+      ? `One model fitted to the ${ticked}`
+      : `The median of the fits of the ${ticked}`;
   if (!d) return;
   // The model's response to a unit step, led in from rest like the others.
   const body = Math.max(2, ...included.map((t) => t.response.xn.length));
@@ -548,11 +602,12 @@ function renderPlots(force = false) {
     return;
   }
   const steps = responses.map((t, i) => ({ t, lead: leadOf(i) })).filter((_, i) => !excluded.has(i));
-  if (steps.length === 0) {
+  const fit = fittedModel();
+  if (steps.length === 0 || !fit) {
     showDetail(undefined, force, 'Model details');
     return;
   }
-  const model = aggregateResponses(steps.map((s) => s.t), analysisSamplePeriodMs).medianDiscrete;
+  const model = fit.discrete;
   showDetail({ kind: 'model', model, adjusted: adjustedPole, steps, samplePeriodMs: analysisSamplePeriodMs }, force);
 }
 
@@ -664,6 +719,15 @@ connectSettings(() => {
   syncLegend();
 }, repaintForTheme);
 
+modelFitGroup.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('button[data-fit]') as HTMLButtonElement | null;
+  if (!btn || btn.disabled) return;
+  modelFit = btn.dataset.fit === 'joint' ? 'joint' : 'median';
+  pushModelToSimulation();
+  renderResults();
+  persistAnalysis();
+});
+
 loadDataBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
@@ -744,7 +808,7 @@ async function keepSession(
 function persistAnalysis() {
   if (currentSessionId === null) return;
   void safely(() =>
-    updateSession(currentSessionId!, { excluded: [...excluded], adjustedPole, summary: summarize() }),
+    updateSession(currentSessionId!, { excluded: [...excluded], adjustedPole, modelFit, summary: summarize() }),
   );
 }
 
@@ -764,9 +828,11 @@ function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number,
 
 function showSession(session: Session, status: string) {
   showSamples(session.xs, session.ys, session.samplePeriodMs, session.source, session.excluded);
-  // After showSamples, which starts the model from its fit.
-  if (session.adjustedPole) {
-    adjustedPole = session.adjustedPole;
+  // After showSamples, which starts the model as a new session's: the median
+  // of the fits, unadjusted.
+  if (session.adjustedPole || session.modelFit === 'joint') {
+    adjustedPole = session.adjustedPole ?? null;
+    modelFit = session.modelFit === 'joint' ? 'joint' : 'median';
     pushModelToSimulation();
     renderResults();
   }

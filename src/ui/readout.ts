@@ -28,7 +28,13 @@ export interface ReadoutInput {
   /** The selected card: a step response's index, or the model of them all. */
   selected: number | 'model';
   /** The model, with its pole as dragged; null when no step response is ticked. */
-  model: { discrete: DiscreteModelParams; continuous: ContinuousModelParams; adjusted: boolean } | null;
+  model: {
+    discrete: DiscreteModelParams;
+    continuous: ContinuousModelParams;
+    adjusted: boolean;
+    /** How it came from the step responses. */
+    method: 'median' | 'joint';
+  } | null;
 }
 
 function tile(label: string, value: string, unit: string, note: string) {
@@ -47,7 +53,11 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
   // A single step's numbers must never be mistaken for the model's: the
   // heading says which one is showing.
   readoutHeading.textContent =
-    step !== null ? `Step ${step + 1} model${byModel ? ' · self-test' : ''}` : byModel ? selfTestLabel(source) : 'Median model';
+    step !== null ? `Step ${step + 1} model${byModel ? ' · self-test' : ''}` : byModel
+        ? selfTestLabel(source)
+        : model?.method === 'joint'
+          ? 'Joint model'
+          : 'Median model';
   readoutHeading.parentElement!.parentElement!.dataset.source = byModel ? 'model' : 'you';
   readoutHeading.parentElement!.parentElement!.dataset.selected = step !== null ? 'step' : 'model';
 
@@ -74,7 +84,7 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
     d = model!.discrete;
     const excludedCount = responses.length - included.length;
     readoutSource.textContent =
-      `Median of ${included.length} step response${included.length === 1 ? '' : 's'}` +
+      `${model!.method === 'joint' ? 'Fitted to' : 'Median of'} ${included.length} step response${included.length === 1 ? '' : 's'}` +
       (excludedCount > 0 ? ` · ${excludedCount} excluded` : '') +
       (model!.adjusted ? ' · pole adjusted' : '');
   }

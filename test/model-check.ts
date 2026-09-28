@@ -4,7 +4,13 @@
 //
 //   npx tsx test/model-check.ts
 
-import { fit1PoleOutputError, fit2PoleOutputError, simulateFirstOrder, simulateSecondOrder } from '../src/engine/curveFit';
+import {
+  fit1PoleOutputError,
+  fit2PoleOutputError,
+  refine2Pole,
+  simulateFirstOrder,
+  simulateSecondOrder,
+} from '../src/engine/curveFit';
 
 // A step of 100 units after 3 samples at rest, like a recorded step response.
 const N = 60;
@@ -32,6 +38,22 @@ for (const [label, p1, p2, D] of [
   const fit = fit2PoleOutputError(step, simulateSecondOrder(step, p1, p2, D));
   const ok = near(fit.p1, p1, 0.005) && near(fit.p2, p2, 0.005) && fit.D === D;
   check(label, ok, `p1=${fit.p1.toFixed(3)} p2=${fit.p2.toFixed(3)} D=${fit.D} (built with p1=${p1} p2=${p2} D=${D})`);
+}
+
+// A joint fit to several responses of one model, to steps of different sizes
+// and directions, recovers that model, starting from rough guesses.
+{
+  const [p1, p2, D] = [0.8, 0.3, 5];
+  const targets = [100, -40, 65].map((size) => {
+    const xn = Float64Array.from(step, (v) => (v * size) / 100);
+    return { xn, yn: simulateSecondOrder(xn, p1, p2, D), weight: 1 / (size * size * 3) };
+  });
+  const fit = refine2Pole(targets, [
+    { p1: 0.77, p2: 0.34, D: 4 },
+    { p1: 0.84, p2: 0.26, D: 7 },
+  ]);
+  const ok = near(fit.p1, p1, 0.005) && near(fit.p2, p2, 0.005) && fit.D === D;
+  check('2-pole, joint fit', ok, `p1=${fit.p1.toFixed(3)} p2=${fit.p2.toFixed(3)} D=${fit.D} (built with p1=${p1} p2=${p2} D=${D})`);
 }
 
 // Unity DC gain: the response settles on the step it was given.

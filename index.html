@@ -116,7 +116,13 @@
       <article class="card readout-card">
         <header class="card-head split-head">
           <h2 id="readoutHeading">Median model</h2>
-          <p class="card-note" id="readoutSource"></p>
+          <!-- How this session's model comes from its step responses. Shown
+               while the Model card is selected; a step shows its own fit. -->
+          <div class="segmented compact" id="modelFitGroup" role="radiogroup" aria-label="How the model is fitted" hidden>
+            <button type="button" role="radio" data-fit="median" aria-checked="true" title="The median of each step response's own fit">Median fit</button>
+            <button type="button" role="radio" data-fit="joint" aria-checked="false" title="One model fitted to all the ticked step responses at once">Joint fit</button>
+          </div>
+          <p class="card-note readout-note" id="readoutSource"></p>
         </header>
         <div id="readout" class="readout">
           <p class="empty">Record a few step responses and the identified model appears here, updating as each step interval completes.</p>

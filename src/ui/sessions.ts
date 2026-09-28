@@ -32,6 +32,8 @@ export interface Session {
   excluded: number[];
   note: string;
   summary: SessionSummary | null;
+  /** How the model comes from the step responses; median when unset. */
+  modelFit?: 'median' | 'joint';
   /** The model's pole pair, when it has been dragged off the fit. */
   adjustedPole?: { p1: number; p2: number } | null;
   /** Content hash, so importing the same file twice keeps one copy. */
