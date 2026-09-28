@@ -43,17 +43,23 @@ export function simulateFirstOrder(xn: ArrayLike<number>, p: number, D: number):
 /**
  * y[n] = 2*p1*y[n-1] - a2*y[n-2] + gain*x[n-D], gain fixed for unity DC, where
  * a2 is the product of the pair -- see pairProduct for what a negative p2 means.
+ * D may fall between samples -- the median of an even number of delays does --
+ * and x is then read by linear interpolation.
  */
 export function simulateSecondOrder(xn: ArrayLike<number>, p1: number, p2: number, D: number): Float64Array {
   const n = xn.length;
   const a1 = 2 * p1;
   const a2 = pairProduct(p1, p2);
   const gain = 1 - 2 * p1 + a2;
+  const whole = Math.floor(D);
+  const frac = D - whole;
+  const x = (j: number) => (j >= 0 && j < n ? xn[j] : 0);
   const out = new Float64Array(n);
   for (let k = 0; k < n; k++) {
     const y1 = k >= 1 ? out[k - 1] : 0;
     const y2 = k >= 2 ? out[k - 2] : 0;
-    out[k] = a1 * y1 - a2 * y2 + gain * (k - D >= 0 ? xn[k - D] : 0);
+    const delayed = frac === 0 ? x(k - whole) : (1 - frac) * x(k - whole) + frac * x(k - whole - 1);
+    out[k] = a1 * y1 - a2 * y2 + gain * delayed;
   }
   return out;
 }

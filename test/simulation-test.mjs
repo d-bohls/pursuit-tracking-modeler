@@ -56,7 +56,24 @@ if (Math.abs(after - IDENTIFIED_ZETA) > 0.01) {
 if (Math.abs(after - before) < 0.05) {
   fail(`ζ barely moved (${before} -> ${after}) -- the simulation is probably still on the demo pole`);
 }
-if (!/your identified model/.test(afterText)) fail(`readout should say it switched: "${afterText}"`);
+if (!/the identified model/.test(afterText)) fail(`readout should say it switched: "${afterText}"`);
+
+// 2b. adjusting the Model card's pole changes what the simulation -- and so
+// Replay and the self-test -- plays back, and Escape puts the fit back.
+const readoutZeta = async () =>
+  Number((await page.locator('.tile', { hasText: 'Damping' }).locator('.tile-value').textContent())?.trim());
+await page.locator('.model-card .response-inspect').click();
+await page.locator('#poleGraph').focus();
+await page.keyboard.press('Shift+ArrowLeft');
+await page.keyboard.press('Shift+ArrowLeft');
+const adjustedZeta = await zetaFromUi();
+console.log(`after adjusting the pole: ζ = ${adjustedZeta}`);
+if (Math.abs(adjustedZeta - after) < 0.005) fail(`adjusting the pole did not change the simulated model (ζ ${after} -> ${adjustedZeta})`);
+if (Math.abs(adjustedZeta - (await readoutZeta())) > 0.006) {
+  fail(`the simulation (ζ ${adjustedZeta}) does not play the adjusted model the readout shows (ζ ${await readoutZeta()})`);
+}
+await page.keyboard.press('Escape');
+if (Math.abs((await zetaFromUi()) - IDENTIFIED_ZETA) > 0.01) fail('Escape did not return the simulation to the fitted model');
 
 // 3. and the simulated run should visibly overshoot, since ζ=0.36 means ~29%
 // The run controls live on the plot now, and the mode lives in Settings.

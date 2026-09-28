@@ -81,9 +81,26 @@ await page.waitForTimeout(200);
 if (!(await page.locator('#sessionsDialog').isVisible())) fail('closing the samples view should return to the list');
 await closeData();
 
-// 4. one card per step response, and the summary model matches the engine
-const cards = await page.locator('.response-card').count();
+// 4. one card per step response, then the Model card, selected, and the
+// summary model matches the engine
+const cards = await page.locator('.response-card:not(.model-card)').count();
 if (cards !== 10) fail(`expected 10 response cards, got ${cards}`);
+if (!(await page.locator('.response-card').last().evaluate((el) => el.classList.contains('model-card')))) {
+  fail('the Model card is not the last card');
+}
+if ((await page.locator('.model-card .response-inspect').getAttribute('aria-pressed')) !== 'true') {
+  fail('the Model card is not selected after loading');
+}
+// The selected card is scrolled into view within the strip.
+const inStrip = (selector) =>
+  page.locator(selector).evaluate((card) => {
+    const strip = document.getElementById('filmstrip').getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    return box.left >= strip.left - 1 && box.right <= strip.right + 1;
+  });
+if (!(await inStrip('.model-card'))) fail('the selected Model card is scrolled out of view');
+if ((await page.locator('#readoutHeading').textContent()) !== 'Median model') fail('the model container is not headed "Median model"');
+if (!/Model details/.test((await page.locator('#responseDetailHeading').textContent()) ?? '')) fail('the plots do not show the model');
 
 // The display typesets the equation, so hold it to the engine string it carries.
 const modelOf = () => page.locator('.diffeq').getAttribute('data-equation');
@@ -143,8 +160,21 @@ if (!(await canvasHasInk('#poleGraph'))) fail('pole plot canvas is blank');
 if (!(await canvasHasInk('.response-card canvas'))) fail('response sparkline is blank');
 if (!(await canvasHasInk('#stepGraph'))) fail('step response canvas is blank');
 
-// 7b. dragging the pole is exploration: moving it off the fit makes the fit
-// worse (that is what "best fit" means), and Escape puts it back exactly.
+// 7a. selecting a step shows that step's own model in the model container,
+// and selecting the Model card goes back to the median.
+await page.locator('.response-card:not(.model-card) .response-inspect').first().click();
+if ((await page.locator('#readoutHeading').textContent()) !== 'Step 1 model') fail('selecting step 1 did not head the container "Step 1 model"');
+if ((await modelOf()) === before) fail('selecting step 1 still shows the median model');
+if (!/Step 1 details/.test((await page.locator('#responseDetailHeading').textContent()) ?? '')) fail('the plots do not follow step 1');
+await page.locator('.model-card .response-inspect').click();
+if ((await modelOf()) !== before) fail('selecting the Model card did not return to the median model');
+if (!(await canvasHasInk('.model-card canvas'))) fail('the Model card thumbnail is blank');
+if (!(await canvasHasInk('#stepGraph'))) fail('the model step plot is blank');
+
+// 7b. dragging the pole is exploration: moving it off a step's fit makes the
+// fit worse (that is what "best fit" means), and Escape puts it back exactly.
+await page.locator('.response-card:not(.model-card) .response-inspect').first().click();
+const stepModel = await modelOf();
 const errOf = async () => Number(((await page.locator('#poleReadout').textContent()) ?? '').match(/([\d.]+)% err/)?.[1]);
 const atFit = await errOf();
 await page.locator('#poleGraph').focus();
@@ -155,7 +185,7 @@ if (!(moved > atFit)) fail(`moving the pole off the fit did not raise the error 
 if (await page.locator('#poleResetBtn').isHidden()) fail('"Back to the fit" did not appear after moving the pole');
 await page.keyboard.press('Escape');
 if ((await errOf()) !== atFit) fail('Escape did not return the pole to the fit');
-if ((await modelOf()) !== before) fail('dragging the pole changed the identified model');
+if ((await modelOf()) !== stepModel) fail('dragging the pole changed the identified model');
 
 // 7c. a replay runs at the speed it was RECORDED at, not at today's setting.
 // The reference file is 100 ms per sample; with Settings at 50 ms, pacing by the
@@ -213,6 +243,21 @@ if (paceKept !== '7.5') fail(`step interval after reload: ${paceKept}, expected 
 
 if (consoleErrors.length) fail(`console errors during run: ${consoleErrors.join(' | ')}`);
 
+// The model's pole can be adjusted: Replay plays the adjusted model, it is
+// kept with the session across a reload, and "Back to the fit" undoes it.
+await page.locator('.model-card .response-inspect').click();
+await page.locator('#poleGraph').focus();
+await page.keyboard.press('Shift+ArrowLeft');
+const adjusted = await modelOf();
+if (adjusted === before) fail('dragging the model pole did not change the model');
+if (!/pole adjusted/.test((await page.locator('#readoutSource').textContent()) ?? '')) fail('the readout does not say the pole is adjusted');
+await page.waitForTimeout(700);
+await page.reload();
+await page.waitForTimeout(800);
+if ((await modelOf()) !== adjusted) fail('the adjusted model was not kept across a reload');
+await page.locator('#poleResetBtn').click();
+if ((await modelOf()) !== before) fail('"Back to the fit" did not restore the median model');
+
 // On iOS a finger held on the plot is a recording, so a long press must not
 // select its text. (The tap highlight and callout are iOS-only properties
 // that desktop WebKit does not implement, so they cannot be checked here.)
@@ -235,6 +280,8 @@ if (process.exitCode) {
   console.log('  - 10 response cards rendered');
   console.log(`  - median model matches engine output: ${EXPECTED_MEDIAN_2ND_ORDER}`);
   console.log('  - excluding and restoring a response re-derives the model');
+  console.log('  - the Model card is last and selected, and selecting a step shows its own model');
+  console.log('  - the model pole can be adjusted, is kept across a reload, and goes back to the fit');
   console.log('  - step, frequency, pole and sparkline canvases drew, and follow the theme');
   console.log('  - moving the pole off the fit raises the error, and Escape restores it');
   console.log('  - the step interval slider sets, steps and remembers its value');

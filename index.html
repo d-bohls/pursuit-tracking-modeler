@@ -85,7 +85,7 @@
                  mean the same thing in the time and frequency domains. -->
             <ul class="legend detail-legend" id="detailLegend" aria-label="Key for the plots below" hidden>
               <li><span class="key" style="--key: var(--series-target)"></span>Target</li>
-              <li><span class="key" style="--key: var(--series-you)"></span>Measured</li>
+              <li><span class="key" style="--key: var(--series-you)"></span><span id="keyMeasured">Measured</span></li>
               <li><span class="key" style="--key: var(--series-model)"></span><span id="keyModel">Model</span></li>
               <li id="keyFit" hidden><span class="key key-dashed" style="--key: var(--series-model)"></span>Fit</li>
               <li><span class="key key-dashed" style="--key: var(--plot-muted)"></span>1st-order fit</li>
@@ -115,11 +115,11 @@
 
       <article class="card readout-card">
         <header class="card-head split-head">
-          <h2 id="readoutHeading">Your model</h2>
+          <h2 id="readoutHeading">Median model</h2>
           <p class="card-note" id="readoutSource"></p>
         </header>
         <div id="readout" class="readout">
-          <p class="empty">Record a few step responses and your identified model appears here, updating as each step interval completes.</p>
+          <p class="empty">Record a few step responses and the identified model appears here, updating as each step interval completes.</p>
         </div>
       </article>
     </main>

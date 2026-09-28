@@ -682,6 +682,11 @@ button.primary[data-recording="true"] {
   cursor: pointer;
 }
 
+/* The Model card closes the strip: the same shape as a step's, set apart by
+ * the model's colour. */
+.model-card { border-color: color-mix(in srgb, var(--series-model) 55%, var(--line)); }
+.model-card .response-inspect .name { color: var(--series-model); padding-right: 0; }
+
 .response-stats { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
 /* --------------------------------------------------------------- plots */

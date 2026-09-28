@@ -119,7 +119,7 @@ export function renderGuide(phase: Phase, runMode: SimulationMode) {
     items = [
       `When recording, follow the target's height with your ${touch ? 'finger' : 'pointer'}`,
       touch ? 'Hold the record button or the plot to record; lift to stop' : 'Space bar also starts and stops recording',
-      'Replay this session with your model overlaid',
+      'Replay this session with the model overlaid',
     ];
   }
   setList(stageGuide, items);

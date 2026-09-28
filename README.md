@@ -25,14 +25,18 @@ frequency, as continuous- and discrete-time transfer functions.
   run ends itself after 10 step responses, or stop it with the Space bar or a
   click on the plot. On a touchscreen, hold the button or the plot and lift
   to stop.
-- **Replay** plays the session back with your identified model driven by the
+- **Replay** plays the session back with the identified model driven by the
   same target, so you can see where the model and your hand disagree.
-- Each step becomes a card with a thumbnail. Untick one and every number
-  re-derives from the rest; step responses that fit more than 3x worse or
-  better than the median are marked ⚠. Pick a card to see its step response,
-  frequency response and poles, and drag the poles to explore.
-- **Your model** leads with reaction delay, overshoot, damping and natural
+- Each step becomes a card with a thumbnail, and the last card, **Model**, is
+  the median of the ticked steps. Untick a step and the model re-derives from
+  the rest; steps that fit more than 3x worse or better than the median are
+  marked ⚠.
+- Pick a card to see its model, step response, frequency response and poles.
+  The model leads with reaction delay, overshoot, damping and natural
   frequency, with `H(s)`, `H(z)` and the difference equation underneath.
+- Drag the Model card's poles to adjust the model: the adjustment is kept
+  with the session, and Replay plays it. A step's poles can be dragged to
+  explore, and go back to its fit.
 - **Sessions** are kept in the browser, and the open one reopens on reload.
   Click a session's name to rename it; open, export, import or delete sessions
   from the Sessions dialog.

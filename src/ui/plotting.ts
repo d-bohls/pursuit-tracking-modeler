@@ -5,8 +5,10 @@
 // draws correctly on a HiDPI screen, at any layout width, in either theme.
 
 export interface FrequencyPlotSeries {
-  /** |H[k]| of the DFT of the deconvolved impulse response. */
-  sampled: Float64Array;
+  /** |H[k]| of the DFT of the deconvolved impulse response, when there is one. */
+  sampled?: Float64Array;
+  /** Several measured spectra, drawn faintly; each spans 0..2pi at its own length. */
+  others?: Float64Array[];
   /** Magnitude response of the fitted first-order model. */
   firstOrder: Float64Array;
   /** Magnitude response of the fitted second-order model. */
@@ -79,7 +81,7 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);
 
-  const n = series.sampled.length;
+  const n = series.secondOrder.length;
   if (n < 2) return;
 
   // Auto-scale from the sampled and second-order curves
@@ -88,9 +90,10 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   // would otherwise flatten everything else.
   let yMax = 1;
   for (let i = 0; i < n; i++) {
-    if (series.sampled[i] > yMax) yMax = series.sampled[i];
+    if (series.sampled && series.sampled[i] > yMax) yMax = series.sampled[i];
     if (series.secondOrder[i] > yMax) yMax = series.secondOrder[i];
   }
+  for (const other of series.others ?? []) for (const v of other) if (v > yMax) yMax = v;
   yMax *= 1.2;
 
   const marginL = 44;
@@ -124,19 +127,23 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   ctx.fillText('1.00', 6, yAt(1) + 3);
   ctx.fillText('0', 6, marginT + plotH + 3);
 
-  const drawSeries = (data: Float64Array, color: string, lineWidth: number, dash: number[]) => {
+  const drawSeries = (data: Float64Array, color: string, lineWidth: number, dash: number[], alpha = 1) => {
+    ctx.globalAlpha = alpha;
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
     ctx.setLineDash(dash);
     ctx.beginPath();
     let started = false;
-    for (let k = 0; k < n; k++) {
+    // Each series spans the axis at its own length, so spectra of step
+    // responses of different lengths share it.
+    const len = data.length;
+    for (let k = 0; k < len; k++) {
       const v = data[k];
       if (!Number.isFinite(v)) {
         started = false;
         continue;
       }
-      const x = xAt(k);
+      const x = xAt((k / Math.max(1, len - 1)) * (n - 1));
       const y = yAt(v);
       if (!started) {
         ctx.moveTo(x, y);
@@ -147,7 +154,10 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
     }
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   };
+
+  for (const other of series.others ?? []) drawSeries(other, c.measured, 1.25, [], 0.45);
 
   // Grey, not the target's blue: the two share the key above the plots, and
   // one colour meaning two things there would be a lie in one of them.
@@ -162,7 +172,7 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
 
   drawSeries(series.firstOrder, c.muted, 2, [5, 4]);
   drawSeries(series.secondOrder, c.second, 2, []);
-  drawSeries(series.sampled, c.measured, 2, []);
+  if (series.sampled) drawSeries(series.sampled, c.measured, 2, []);
 }
 
 /**
@@ -182,6 +192,8 @@ export function plotPoleLocations(
   canvas: HTMLCanvasElement,
   poles: Array<{ p1: number; p2: number }>,
   ghost?: { p1: number; p2: number },
+  /** Other pole pairs to show for context, as small dots: each step's own fit. */
+  others: Array<{ p1: number; p2: number }> = [],
 ) {
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);
@@ -233,6 +245,16 @@ export function plotPoleLocations(
     }
     ctx.globalAlpha = 1;
   };
+  ctx.fillStyle = c.measured;
+  ctx.globalAlpha = 0.55;
+  for (const { p1, p2 } of others) {
+    for (const [x, y] of points(p1, p2)) {
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
   if (ghost) cross(ghost.p1, ghost.p2, c.muted, 0.7);
   for (const { p1, p2 } of poles) {
     // A faint ring says "this can be picked up" without a word of text.
@@ -251,8 +273,10 @@ export function plotPoleLocations(
 export interface StepPlotSeries {
   /** The step response's target: the step. */
   target: Float64Array;
-  /** What was recorded in response. */
-  measured: Float64Array;
+  /** What was recorded in response, when one recording is shown. */
+  measured?: Float64Array;
+  /** Several recordings, drawn faintly; NaN where one has no sample. */
+  others?: Float64Array[];
   /** The model's response to the same target. */
   model: Float64Array;
   /** The fitted model's response, drawn faintly while `model` is a dragged one. */
@@ -274,7 +298,13 @@ export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeri
   const n = series.target.length;
   if (n < 2) return;
 
-  const all = [series.target, series.measured, series.model, ...(series.fit ? [series.fit] : [])];
+  const all = [
+    series.target,
+    series.model,
+    ...(series.measured ? [series.measured] : []),
+    ...(series.fit ? [series.fit] : []),
+    ...(series.others ?? []),
+  ];
   let lo = 0;
   let hi = 0;
   for (const data of all) {
@@ -334,17 +364,24 @@ export function plotStepResponse(canvas: HTMLCanvasElement, series: StepPlotSeri
     ctx.setLineDash(dash);
     ctx.lineJoin = 'round';
     ctx.beginPath();
+    let started = false;
     for (let i = 0; i < n; i++) {
-      if (i === 0) ctx.moveTo(xAt(i), yAt(data[i]));
+      if (!Number.isFinite(data[i])) {
+        started = false;
+        continue;
+      }
+      if (!started) ctx.moveTo(xAt(i), yAt(data[i]));
       else ctx.lineTo(xAt(i), yAt(data[i]));
+      started = true;
     }
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   };
+  for (const other of series.others ?? []) line(other, c.measured, 1.25, [], 0.45);
   line(series.target, c.target, 2, []);
   if (series.fit) line(series.fit, c.second, 1.5, [4, 3], 0.6);
-  line(series.measured, c.measured, 2, []);
+  if (series.measured) line(series.measured, c.measured, 2, []);
   line(series.model, c.second, 2, []);
 }
 
@@ -364,6 +401,8 @@ export function plotResponseSparkline(
   responseXn: Float64Array,
   responseYn: Float64Array,
   lead?: { xn: Float64Array; yn: Float64Array },
+  /** Draw the response in the model's colour: it is a model, not a recording. */
+  asModel = false,
 ) {
   const c = chromeOf(canvas);
   const { ctx, width, height } = prepare(canvas, c.surface);
@@ -423,5 +462,5 @@ export function plotResponseSparkline(
   };
 
   line(xn, c.target);
-  line(yn, c.measured);
+  line(yn, asModel ? c.second : c.measured);
 }

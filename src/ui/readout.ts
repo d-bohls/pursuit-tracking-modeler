@@ -1,9 +1,10 @@
-// The model card: the identified model's numbers, what they mean, and the
+// The model card: the numbers of the selected card's model -- one step
+// response's, or the model built from all of them -- what they mean, and the
 // transfer functions they come from.
 
 import type { SimulationMode } from './experiment';
+import type { ContinuousModelParams, DiscreteModelParams } from '../engine/types';
 import {
-  aggregateResponses,
   dampingCharacter,
   dampingMetrics,
   secondOrderDifferenceEquation,
@@ -24,6 +25,10 @@ export interface ReadoutInput {
   samplePeriodMs: number;
   /** Who produced the step responses: you, or a model in a self-test. */
   source: SimulationMode;
+  /** The selected card: a step response's index, or the model of them all. */
+  selected: number | 'model';
+  /** The model, with its pole as dragged; null when no step response is ticked. */
+  model: { discrete: DiscreteModelParams; continuous: ContinuousModelParams; adjusted: boolean } | null;
 }
 
 function tile(label: string, value: string, unit: string, note: string) {
@@ -34,35 +39,48 @@ function tile(label: string, value: string, unit: string, note: string) {
   );
 }
 
-export function renderReadout({ responses, excluded, samplePeriodMs, source }: ReadoutInput) {
+export function renderReadout({ responses, excluded, samplePeriodMs, source, selected, model }: ReadoutInput) {
   // A model run must never be presented as yours: the heading names whose
   // system this is, taken from the data on screen rather than the setting.
   const byModel = source !== 'none' && responses.length > 0;
-  readoutHeading.textContent = byModel ? selfTestLabel(source) : 'Your model';
+  const step = selected === 'model' ? null : responses[selected] ? selected : null;
+  // A single step's numbers must never be mistaken for the model's: the
+  // heading says which one is showing.
+  readoutHeading.textContent =
+    step !== null ? `Step ${step + 1} model${byModel ? ' · self-test' : ''}` : byModel ? selfTestLabel(source) : 'Median model';
   readoutHeading.parentElement!.parentElement!.dataset.source = byModel ? 'model' : 'you';
+  readoutHeading.parentElement!.parentElement!.dataset.selected = step !== null ? 'step' : 'model';
 
   const included = responses.filter((_, i) => !excluded.has(i));
-  if (included.length === 0) {
+  if (step === null && (included.length === 0 || !model)) {
     readoutSource.textContent = responses.length === 0 ? '' : 'All step responses excluded';
     readoutEl.innerHTML =
       responses.length === 0
-        ? '<p class="empty">Record a few step responses and your identified model appears here, updating as each step interval completes.</p>'
+        ? '<p class="empty">Record a few step responses and the identified model appears here, updating as each step interval completes.</p>'
         : '<p class="empty">Tick at least one step response to identify a model.</p>';
     return;
   }
 
-  // The median, which a flagged step response cannot skew. See analysis.ts.
-  const agg = aggregateResponses(included, samplePeriodMs);
-  const c = agg.medianContinuous;
-  const d = agg.medianDiscrete;
+  // The model is the median, which a flagged step response cannot skew; see
+  // analysis.ts. A step's own fit is shown as it is.
+  let c;
+  let d;
+  if (step !== null) {
+    c = responses[step].continuous;
+    d = responses[step].discrete;
+    readoutSource.textContent = '';
+  } else {
+    c = model!.continuous;
+    d = model!.discrete;
+    const excludedCount = responses.length - included.length;
+    readoutSource.textContent =
+      `Median of ${included.length} step response${included.length === 1 ? '' : 's'}` +
+      (excludedCount > 0 ? ` · ${excludedCount} excluded` : '') +
+      (model!.adjusted ? ' · pole adjusted' : '');
+  }
   const { wn, zeta, overshoot } = dampingMetrics(c);
   const character = dampingCharacter(zeta);
   const tau = c.P11 === 0 ? Infinity : -1 / c.P11;
-
-  const excludedCount = responses.length - included.length;
-  readoutSource.textContent =
-    `Median of ${included.length} step response${included.length === 1 ? '' : 's'}` +
-    (excludedCount > 0 ? ` · ${excludedCount} excluded` : '');
 
   // The lede is what the numbers MEAN about the person. H(s) is the evidence,
   // and sits below.
@@ -83,7 +101,9 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source }: R
     tile('Natural frequency', wn.toFixed(2), ' rad/s', settlingNote);
 
   const verdict =
-    `<p class="verdict">${byModel ? 'The model reacts' : 'You react'} after <strong>${(c.D2 * 1000).toFixed(0)} ms</strong>, ` +
+    `<p class="verdict">${step !== null ? 'In this step, ' : ''}${
+      step !== null ? (byModel ? 'the model reacts' : 'you react') : byModel ? 'The model reacts' : 'You react'
+    } after <strong>${(c.D2 * 1000).toFixed(0)} ms</strong>, ` +
     `then ${byModel ? 'closes' : 'close'} in on the target` +
     `${overshoot >= 1 ? `, overshooting by <strong>${overshoot.toFixed(0)}%</strong> before settling` : ' without overshooting'}.</p>`;
 
@@ -123,6 +143,7 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source }: R
     `<p class="details-line">Best first-order fit: τ = ${tau.toFixed(3)} s, delay ${(c.D1 * 1000).toFixed(0)} ms</p>`;
 
   const bounds = outlierBounds(responses);
+  const kind = step !== null ? outlierKindOf(responses[step], bounds) : null;
   const poor = responses.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'poor').length;
   const degenerate = responses.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'degenerate').length;
   const notes: string[] = [];
@@ -131,7 +152,13 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source }: R
   if (degenerate > 0) notes.push(`${responsesFit(degenerate)} more than 3× better than the median, likely too little movement to measure`);
   const flagged = poor + degenerate;
   const flag =
-    notes.length > 0
+    step !== null
+      ? kind
+        ? `<p class="flag">Relative to its step size, this step fits more than 3× ` +
+          `${kind === 'poor' ? 'worse than the median, so it may not have measured the same system' : 'better than the median, likely too little movement to measure'}` +
+          `${excluded.has(step) ? '.' : '; untick it to leave it out of the model.'}</p>`
+        : ''
+      : notes.length > 0
       ? `<p class="flag">Relative to step size, ${notes.join('; ')}. ` +
         `${flagged === 1 ? "It's" : "They're"} marked ⚠ in Session; untick ${flagged === 1 ? 'it' : 'one'} to see how much it moves the model.</p>`
       : '';

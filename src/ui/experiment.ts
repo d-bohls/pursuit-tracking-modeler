@@ -106,7 +106,7 @@ export interface SimulationModel {
 //
 // Note this demo pole is far more damped than a real tracker: zeta = 0.62,
 // about 8% overshoot. Once you run system identification the model below is
-// replaced by YOUR measured one (see setSimulationModel), which is what the
+// replaced by the identified one (see setSimulationModel), which is what the
 // self-test and Replay play back.
 const seed = discretePoleToContinuous(0.8, 0.2, 0.1);
 const DEFAULT_SIMULATION_MODEL: SimulationModel = {
@@ -313,7 +313,7 @@ export class TrackingExperiment {
 
   /**
    * Point the simulation and the ghost at a system. Call this with the
-   * identified model so the self-test and Replay play back YOURS. Without it the simulation plays the built-in demo pole forever.
+   * identified model so the self-test and Replay play it back. Without it the simulation plays the built-in demo pole forever.
    */
   setSimulationModel(model: SimulationModel) {
     this.simModel = model;

@@ -66,7 +66,7 @@ await page.waitForTimeout(400);
 await page.reload();
 await page.waitForTimeout(2500);
 if (!/^Reopened mouse, evening/.test(await status())) fail(`not restored after reload: "${await status()}"`);
-if ((await page.locator('.response-card').count()) !== 10) fail('restored session lost its responses');
+if ((await page.locator('.response-card:not(.model-card)').count()) !== 10) fail('restored session lost its responses');
 if (JSON.stringify(await unticked()) !== '[2]') fail(`unticked responses not restored: ${JSON.stringify(await unticked())}`);
 await openList();
 if ((await page.locator('.session-note').first().inputValue()) !== 'mouse, evening') fail('note not restored');
@@ -115,7 +115,7 @@ if ((await rows().first().locator('.session-note').inputValue()) !== 'quick one'
 await rows().nth(1).locator('.session-open').click();
 await page.waitForTimeout(1500);
 if (!/^Opened the session/.test(await status())) fail(`did not open: "${await status()}"`);
-if ((await page.locator('.response-card').count()) !== 10) fail('reopened session has the wrong responses');
+if ((await page.locator('.response-card:not(.model-card)').count()) !== 10) fail('reopened session has the wrong responses');
 if (JSON.stringify(await unticked()) !== '[2]') fail('reopened session lost its unticked response');
 // Opening selects in place: the list stays up, with the selection moved.
 if (!(await page.locator('#sessionsDialog').isVisible())) fail('opening a session closed the list');
@@ -127,7 +127,7 @@ await closeList();
 await page.reload();
 await page.waitForTimeout(2500);
 if (!/^Reopened mouse, evening/.test(await status())) fail(`reload did not reopen the selected session: "${await status()}"`);
-if ((await page.locator('.response-card').count()) !== 10) fail('reload reopened the wrong session');
+if ((await page.locator('.response-card:not(.model-card)').count()) !== 10) fail('reload reopened the wrong session');
 
 // 6. delete takes two presses
 await openList();

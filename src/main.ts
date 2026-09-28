@@ -21,6 +21,8 @@ import {
   type SessionSummary,
 } from './ui/sessions';
 import { analyzeStepResponse, aggregateResponses, dampingMetrics, dampingCharacter, type StepResponseAnalysis } from './engine/analysis';
+import { simulateSecondOrder } from './engine/curveFit';
+import { discretePairToContinuous } from './engine/poleConversion';
 import { errorPctOf, outlierBounds, outlierKindOf } from './engine/outliers';
 import { splitStepResponses, padResponses, responseLeadIns } from './engine/stepResponses';
 import { parseSessionFile } from './engine/dataFormat';
@@ -29,7 +31,7 @@ import { elapsed, responseCount, sessionName, whenLabel } from './ui/labels';
 import { connectSettings, currentConfig } from './ui/settings';
 import { dismissFlash, flash, isTouchFirst, onTouchFirstChange, renderGuide } from './ui/stageHelp';
 import { renderReadout as drawReadout } from './ui/readout';
-import { showDetail } from './ui/detailPlots';
+import { onModelPoleChange, showDetail } from './ui/detailPlots';
 import { connectSessionTitle, setSessionName } from './ui/sessionTitle';
 import { connectSessions, renderSessions, safely } from './ui/sessionsView';
 
@@ -66,13 +68,14 @@ let leadIns: ReturnType<typeof responseLeadIns> = [];
 const LEAD_FRACTION = 0.1;
 /** Step responses the operator has taken out of the model. */
 const excluded = new Set<number>();
-let inspected = 0;
 /**
- * While a run is live, the newest step response is selected as it arrives. Picking an
- * earlier one pins it, so step responses landing mid-inspection do not yank it away;
- * picking the newest again resumes following.
+ * The selected card: a step response's index, or the Model card, which stands
+ * for the model built from every included step response. The Model card is
+ * selected whenever a step response arrives and whenever a session opens.
  */
-let followLatest = true;
+let selected: number | 'model' = 'model';
+/** The model's pole pair as dragged on the Model card, kept with the session. */
+let adjustedPole: { p1: number; p2: number } | null = null;
 /** The samples on screen, and the period they were recorded at -- which paces a replay. */
 let lastSamples: { xs: Float64Array; ys: Float64Array; samplePeriodMs: number } | null = null;
 let identifiedYet = false;
@@ -263,10 +266,9 @@ function syncAnalysis() {
     responses.push(analyzeStepResponse(raw[i], padded[i], analysisSamplePeriodMs));
   }
   identifiedYet = true;
-  if (experiment.isActive() && followLatest) inspected = responses.length - 1;
+  selected = 'model';
   pushModelToSimulation();
   renderResults();
-  if (experiment.isActive() && followLatest) filmstripEl.scrollTo({ left: filmstripEl.scrollWidth });
 }
 
 /** Throws the current analysis away immediately. */
@@ -280,8 +282,8 @@ function clearAnalysis(samplePeriodMs: number, source: SimulationMode) {
   excluded.clear();
   currentSessionId = null;
   setSessionName('');
-  inspected = 0;
-  followLatest = true;
+  selected = 'model';
+  adjustedPole = null;
   analysisSamplePeriodMs = samplePeriodMs;
   analysisSource = source;
   pendingReset = false;
@@ -312,15 +314,77 @@ function renderResults() {
   renderPlots();
 }
 
-function pushModelToSimulation() {
+/**
+ * The model: the median of the ticked step responses, with its pole pair
+ * moved wherever it has been dragged. It is what the readout reports, and
+ * what Replay and the self-test play back.
+ */
+function currentModel() {
   const included = includedResponses();
-  if (included.length === 0) return;
-  experiment.setSimulationModel({ ...aggregateResponses(included, analysisSamplePeriodMs).medianContinuous });
+  if (included.length === 0) return null;
+  const agg = aggregateResponses(included, analysisSamplePeriodMs);
+  if (!adjustedPole) return { discrete: agg.medianDiscrete, continuous: agg.medianContinuous, adjusted: false };
+  const { p1, p2 } = adjustedPole;
+  const c = discretePairToContinuous(p1, p2, analysisSamplePeriodMs / 1000);
+  return {
+    discrete: { ...agg.medianDiscrete, P21: p1, P22: p2 },
+    continuous: { ...agg.medianContinuous, P21: c.cr, P22: c.ci },
+    adjusted: true,
+  };
+}
+
+function pushModelToSimulation() {
+  const model = currentModel();
+  if (!model) return;
+  experiment.setSimulationModel({ ...model.continuous });
   renderSimModelInfo();
 }
 
 function renderReadout() {
-  drawReadout({ responses, excluded, samplePeriodMs: analysisSamplePeriodMs, source: analysisSource });
+  drawReadout({
+    responses,
+    excluded,
+    samplePeriodMs: analysisSamplePeriodMs,
+    source: analysisSource,
+    selected,
+    model: currentModel(),
+  });
+}
+
+// Dragging the Model card's pole changes the model itself.
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+onModelPoleChange((pole) => {
+  adjustedPole = pole;
+  pushModelToSimulation();
+  fillModelCard();
+  renderReadout();
+  // A drag reports many positions a second; keep the one it settles on.
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistAnalysis, 300);
+});
+
+/** Selects a card: the model container and the detail plots follow it. */
+function select(card: number | 'model') {
+  selected = card;
+  for (const button of filmstripEl.querySelectorAll<HTMLElement>('.response-inspect')) {
+    button.setAttribute('aria-pressed', String(button.dataset.card === String(card)));
+  }
+  renderReadout();
+  renderPlots();
+  revealSelected();
+}
+
+/**
+ * Scrolls the strip, and only the strip, until the selected card is in view.
+ * scrollIntoView would also scroll the page, yanking it about mid-run.
+ */
+function revealSelected() {
+  const card = filmstripEl.querySelector('.response-inspect[aria-pressed="true"]')?.closest<HTMLElement>('.response-card');
+  if (!card) return;
+  const strip = filmstripEl.getBoundingClientRect();
+  const box = card.getBoundingClientRect();
+  if (box.left < strip.left) filmstripEl.scrollLeft -= strip.left - box.left;
+  else if (box.right > strip.right) filmstripEl.scrollLeft += box.right - strip.right;
 }
 
 /** Step response i's lead-in: the samples just before its step. */
@@ -378,7 +442,8 @@ function renderFilmstrip() {
     const inspect = document.createElement('button');
     inspect.type = 'button';
     inspect.className = 'response-inspect';
-    inspect.setAttribute('aria-pressed', String(i === inspected));
+    inspect.dataset.card = String(i);
+    inspect.setAttribute('aria-pressed', String(i === selected));
     inspect.innerHTML =
       `<span class="name">Step ${i + 1}${kind ? ' ⚠' : ''}</span>` +
       `<canvas></canvas>` +
@@ -391,14 +456,7 @@ function renderFilmstrip() {
     // Update in place rather than rebuilding the strip. A rebuild replaces the
     // very node being operated, which drops keyboard focus to the body -- so
     // excluding three step responses in a row meant tabbing back in three times.
-    inspect.addEventListener('click', () => {
-      inspected = i;
-      followLatest = i === responses.length - 1;
-      for (const other of filmstripEl.querySelectorAll('.response-inspect')) {
-        other.setAttribute('aria-pressed', String(other === inspect));
-      }
-      renderPlots();
-    });
+    inspect.addEventListener('click', () => select(i));
 
     const box = document.createElement('input');
     box.type = 'checkbox';
@@ -413,7 +471,9 @@ function renderFilmstrip() {
       // what is excluded. So no rebuild, and focus stays on the checkbox.
       card.dataset.excluded = String(excluded.has(i));
       pushModelToSimulation();
+      fillModelCard();
       renderReadout();
+      renderPlots();
       persistAnalysis();
     });
 
@@ -422,6 +482,21 @@ function renderFilmstrip() {
     plotResponseSparkline(inspect.querySelector('canvas') as HTMLCanvasElement, t.response.xn, t.response.yn, leadOf(i));
   });
 
+  // The Model card, always last: the model built from every included step
+  // response. It has no checkbox -- it is defined by what is ticked.
+  const card = document.createElement('div');
+  card.className = 'response-card model-card';
+  const inspect = document.createElement('button');
+  inspect.type = 'button';
+  inspect.className = 'response-inspect';
+  inspect.dataset.card = 'model';
+  inspect.setAttribute('aria-pressed', String(selected === 'model'));
+  inspect.addEventListener('click', () => select('model'));
+  card.append(inspect);
+  filmstripEl.appendChild(card);
+  fillModelCard();
+  revealSelected();
+
   if (focusedIndex >= 0) {
     const card = filmstripEl.children[focusedIndex] as HTMLElement | undefined;
     const target = card?.querySelector<HTMLElement>(focusedWasCheckbox ? '.response-include' : '.response-inspect');
@@ -429,12 +504,56 @@ function renderFilmstrip() {
   }
 }
 
+/** The Model card's thumbnail and numbers, for what is ticked now. */
+function fillModelCard() {
+  const inspect = filmstripEl.querySelector<HTMLButtonElement>('.model-card .response-inspect');
+  if (!inspect) return;
+  const included = includedResponses();
+  const model = currentModel();
+  const d = model?.discrete;
+  const zeta = model ? dampingMetrics(model.continuous).zeta : NaN;
+  inspect.innerHTML =
+    `<span class="name">Model</span><canvas></canvas>` +
+    `<span class="response-stats"><span>${d ? `ζ ${zeta.toFixed(2)}` : '—'}</span>` +
+    `<span>${included.length} step${included.length === 1 ? '' : 's'}</span></span>`;
+  inspect.title = d
+    ? `The median of the ${included.length} ticked step response${included.length === 1 ? '' : 's'}`
+    : 'Tick at least one step response to build the model';
+  if (!d) return;
+  // The model's response to a unit step, led in from rest like the others.
+  const body = Math.max(2, ...included.map((t) => t.response.xn.length));
+  const unit = new Float64Array(body).fill(1);
+  const lead = Math.max(2, Math.round(body * LEAD_FRACTION));
+  plotResponseSparkline(
+    inspect.querySelector('canvas') as HTMLCanvasElement,
+    unit,
+    simulateSecondOrder(unit, d.P21, d.P22, d.D2),
+    { xn: new Float64Array(lead), yn: new Float64Array(lead) },
+    true,
+  );
+}
+
 /**
- * @param force redraw even if the same step response is already plotted -- needed
+ * @param force redraw even if the same subject is already plotted -- needed
  *              after a theme change, which the canvases cannot inherit.
  */
 function renderPlots(force = false) {
-  showDetail(responses[inspected], inspected, leadOf(inspected), analysisSamplePeriodMs, force);
+  if (responses.length === 0) {
+    showDetail(undefined, force);
+    return;
+  }
+  if (selected !== 'model') {
+    const i = selected;
+    showDetail({ kind: 'step', t: responses[i], index: i, lead: leadOf(i), samplePeriodMs: analysisSamplePeriodMs }, force);
+    return;
+  }
+  const steps = responses.map((t, i) => ({ t, lead: leadOf(i) })).filter((_, i) => !excluded.has(i));
+  if (steps.length === 0) {
+    showDetail(undefined, force, 'Model details');
+    return;
+  }
+  const model = aggregateResponses(steps.map((s) => s.t), analysisSamplePeriodMs).medianDiscrete;
+  showDetail({ kind: 'model', model, adjusted: adjustedPole, steps, samplePeriodMs: analysisSamplePeriodMs }, force);
 }
 
 /** Shows which system the simulation and the ghost trace play back. */
@@ -443,7 +562,7 @@ function renderSimModelInfo() {
   const { wn, zeta } = dampingOf(model);
   const character = dampingCharacter(zeta);
   const overshoot = zeta < 1 ? Math.exp((-Math.PI * zeta) / Math.sqrt(1 - zeta * zeta)) * 100 : 0;
-  const source = identifiedYet ? 'your identified model' : 'built-in demo model; record a run to replace it';
+  const source = identifiedYet ? 'the identified model' : 'built-in demo model; record a run to replace it';
   simModelInfo.textContent =
     `Model in use: ${source} — ωn ${wn.toFixed(2)} rad/s, ζ ${zeta.toFixed(2)} (${character}, ${overshoot.toFixed(0)}% overshoot)`;
 }
@@ -584,9 +703,9 @@ fileInput.addEventListener('change', async () => {
 /** What a list row shows, from the analysis on screen. */
 function summarize(): SessionSummary {
   const included = includedResponses();
-  if (included.length === 0) return { responses: responses.length, included: 0, zeta: NaN, wn: NaN, delayMs: NaN };
-  const agg = aggregateResponses(included, analysisSamplePeriodMs);
-  const c = agg.medianContinuous;
+  const model = currentModel();
+  if (!model) return { responses: responses.length, included: 0, zeta: NaN, wn: NaN, delayMs: NaN };
+  const c = model.continuous;
   const { wn, zeta } = dampingMetrics(c);
   return { responses: responses.length, included: included.length, zeta, wn, delayMs: c.D2 * 1000 };
 }
@@ -624,7 +743,9 @@ async function keepSession(
 /** Saves the unticked step responses, and the summary they change, to the open session. */
 function persistAnalysis() {
   if (currentSessionId === null) return;
-  void safely(() => updateSession(currentSessionId!, { excluded: [...excluded], summary: summarize() }));
+  void safely(() =>
+    updateSession(currentSessionId!, { excluded: [...excluded], adjustedPole, summary: summarize() }),
+  );
 }
 
 /** Puts samples on screen and identifies them, as an import or an opened session. */
@@ -643,6 +764,12 @@ function showSamples(xs: Float64Array, ys: Float64Array, samplePeriodMs: number,
 
 function showSession(session: Session, status: string) {
   showSamples(session.xs, session.ys, session.samplePeriodMs, session.source, session.excluded);
+  // After showSamples, which starts the model from its fit.
+  if (session.adjustedPole) {
+    adjustedPole = session.adjustedPole;
+    pushModelToSimulation();
+    renderResults();
+  }
   currentSessionId = session.id;
   rememberOpen(session.id);
   setSessionName(sessionName(session));
