@@ -714,6 +714,25 @@ function repaintForTheme() {
   renderPlots(true);
 }
 
+// A printout is ink on white paper whatever the theme on screen, so the page
+// is light while it prints -- the canvases repainted to match -- and goes
+// back afterwards.
+let themeBeforePrint: string | null | undefined;
+window.addEventListener('beforeprint', () => {
+  // Already printing: keep the theme it will go back to.
+  if (themeBeforePrint !== undefined) return;
+  themeBeforePrint = document.documentElement.getAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', 'light');
+  repaintForTheme();
+});
+window.addEventListener('afterprint', () => {
+  if (themeBeforePrint === undefined) return;
+  if (themeBeforePrint === null) document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', themeBeforePrint);
+  themeBeforePrint = undefined;
+  repaintForTheme();
+});
+
 // Back from the background, the appearance may have changed with nothing
 // said about it (iOS turns dark at night while Safari is asleep), so repaint.
 document.addEventListener('visibilitychange', () => {

@@ -947,3 +947,35 @@ dialog.settings[open] { display: flex; flex-direction: column; max-height: calc(
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* --------------------------------------------------------------- print */
+
+/* A printout is the analysis: the session's step responses, the selected
+ * card's plots and the model. The live plot and every control are for the
+ * screen. The page switches to the light theme for printing (main.ts), so
+ * ink goes on white paper and the plots are repainted to match. */
+@media print {
+  html, body { height: auto; overflow: visible; background: #fff; }
+  #app { height: auto; display: block; max-width: none; padding: 0; }
+  .topbar-actions,
+  #stage,
+  .response-include,
+  .response-notes,
+  #modelFitGroup,
+  #poleResetBtn,
+  .screen-only,
+  dialog { display: none !important; }
+  .deck { display: block; }
+  .deck > .card { overflow: visible; margin-bottom: 12px; }
+  .card { box-shadow: none; }
+  /* Whole cards can be taller than a page -- a browser lays the page out at
+   * the window's width and scales it down -- so they may break, but never
+   * through a step card, a plot, a tile or an equation. */
+  .response-card, .plots figure, .tile, .readout .model, .readout .flag, .card-head { break-inside: avoid; }
+  .card-head { break-after: avoid; }
+  /* Every card, not just the ones scrolled into view. */
+  .filmstrip { flex-wrap: wrap; overflow: visible; }
+  /* The plots were drawn for the screen; scaled to the page, they keep
+   * their own proportions rather than being stretched. */
+  .plots canvas, .deck .plots canvas, .deck .pole-figure canvas { height: auto !important; }
+}

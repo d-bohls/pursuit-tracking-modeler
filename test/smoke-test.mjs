@@ -261,6 +261,18 @@ await page.evaluate(() => {
   document.dispatchEvent(new Event('visibilitychange'));
 });
 
+// Printing is on white paper whatever the theme: the page is light while it
+// prints, repainted, and goes back to the theme it had afterwards.
+{
+  const themeOf = () => page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  const before = await themeOf();
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+  if ((await themeOf()) !== 'light') fail('the page is not light while it prints');
+  if ((await surfaceOf('#freqGraph')) !== lightSurface) fail('the plots were not repainted light for printing');
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  if ((await themeOf()) !== before) fail(`printing did not restore the theme (${before} -> ${await themeOf()})`);
+}
+
 // The step interval slider: a number under it jumps there, the arrow keys
 // step by half seconds, and the value survives a reload.
 await page.locator('#settingsBtn').click();
