@@ -12,8 +12,8 @@
  */
 
 :root {
-  /* One plot height at every width, so crossing a layout breakpoint never
-   * makes the plot jump in height. The floor is what the resting
+  /* The plot's height, shortened for the full-window desktop layout below.
+   * The floor is what the resting
    * plot has to hold: legend, the centred button column, and the help at the
    * foot, without the help running into Replay on a short phone. */
   --stage-height: max(330px, 38vh);
@@ -449,6 +449,11 @@ button.primary[data-recording="true"] {
  * Gated on height as well as width -- a short, wide window (a laptop with
  * devtools open) has no business being squeezed into 100vh. */
 @media (min-width: 1040px) and (min-height: 720px) {
+  /* A little shorter here than stacked, so the two cards beneath fit their
+   * content without scrolling on a typical laptop screen. The help runs
+   * wide on a screen this size, so a lower floor still holds it clear of
+   * Replay. */
+  :root { --stage-height: max(280px, 31vh); }
   html, body { height: 100%; overflow: hidden; }
 
   #app {
