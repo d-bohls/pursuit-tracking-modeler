@@ -3,6 +3,7 @@
 
 import type { SimulationMode } from './experiment';
 import { formatAllSamplesBlock } from '../engine/dataFormat';
+import { T } from '../i18n';
 import { $, closeOnBackdropClick } from './dom';
 import { selfTestLabel, sessionName, statsLabel, whenLabel, whoLabel } from './labels';
 import { deleteSession, listSessions, updateSession, type Session, type SessionSummary } from './sessions';
@@ -63,9 +64,9 @@ let samplesShown: SamplesView | null = null;
 /** Opens one session's samples, over the Sessions list. */
 function openSamples(view: SamplesView) {
   samplesShown = view;
-  samplesTitle.textContent = `Samples · ${view.name}`;
+  samplesTitle.textContent = `${T.samples} · ${view.name}`;
   const seconds = (view.xs.length * view.samplePeriodMs) / 1000;
-  samplesMeta.textContent = `${view.xs.length} samples · one every ${view.samplePeriodMs} ms · ${seconds.toFixed(1)} s`;
+  samplesMeta.textContent = T.samplesMeta(view.xs.length, view.samplePeriodMs, seconds.toFixed(1));
   const lines = ['n\tx[n]\ty[n]', '======================='];
   for (let i = 0; i < view.xs.length; i++) {
     lines.push(`${i}\t${view.xs[i].toFixed(3)}\t${view.ys[i].toFixed(3)}`);
@@ -117,8 +118,8 @@ function unsavedRow(): HTMLLIElement | null {
   const info = document.createElement('div');
   info.className = 'session-open';
   for (const [cls, text] of [
-    ['session-when', 'On screen · not kept'],
-    ['session-who', unsaved.source === 'none' ? 'You' : selfTestLabel(unsaved.source)],
+    ['session-when', T.onScreenNotKept],
+    ['session-who', unsaved.source === 'none' ? T.you : selfTestLabel(unsaved.source)],
     ['session-stats', statsLabel(unsaved.summary)],
   ]) {
     const span = document.createElement('span');
@@ -126,8 +127,8 @@ function unsavedRow(): HTMLLIElement | null {
     span.textContent = text;
     info.appendChild(span);
   }
-  const data = rowButton('session-data', 'Data', 'Samples of the session on screen', () =>
-    openSamples({ ...shown, name: 'the session on screen', createdAt: Date.now() }),
+  const data = rowButton('session-data', T.data, T.samplesOnScreen, () =>
+    openSamples({ ...shown, name: T.theSessionOnScreen, createdAt: Date.now() }),
   );
   li.append(info, data);
   return li;
@@ -148,7 +149,7 @@ export async function renderSessions() {
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
     openBtn.className = 'session-open';
-    openBtn.title = 'Open this session';
+    openBtn.title = T.openSession;
     for (const [cls, text] of [
       ['session-when', whenLabel(session.createdAt)],
       ['session-who', whoLabel(session)],
@@ -175,8 +176,8 @@ export async function renderSessions() {
     note.type = 'text';
     note.className = 'session-note';
     note.value = session.note;
-    note.placeholder = 'Add a note: mouse, trackpad, tired…';
-    note.setAttribute('aria-label', `Note for the session from ${whenLabel(session.createdAt)}`);
+    note.placeholder = T.notePlaceholder;
+    note.setAttribute('aria-label', T.noteFor(whenLabel(session.createdAt)));
     let noteTimer: ReturnType<typeof setTimeout> | undefined;
     const saveNote = () => {
       clearTimeout(noteTimer);
@@ -203,12 +204,12 @@ export async function renderSessions() {
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'session-delete';
-    del.textContent = 'Delete';
-    del.setAttribute('aria-label', `Delete the session from ${whenLabel(session.createdAt)}`);
+    del.textContent = T.delete;
+    del.setAttribute('aria-label', T.deleteSession(whenLabel(session.createdAt)));
     del.addEventListener('click', async () => {
       if (del.dataset.confirm !== 'true') {
         del.dataset.confirm = 'true';
-        del.textContent = 'Delete?';
+        del.textContent = T.deleteConfirm;
         return;
       }
       await safely(() => deleteSession(session.id));
@@ -218,10 +219,10 @@ export async function renderSessions() {
     });
     del.addEventListener('blur', () => {
       del.dataset.confirm = 'false';
-      del.textContent = 'Delete';
+      del.textContent = T.delete;
     });
 
-    const data = rowButton('session-data', 'Data', `Samples of the session from ${whenLabel(session.createdAt)}`, () =>
+    const data = rowButton('session-data', T.data, T.samplesOf(whenLabel(session.createdAt)), () =>
       openSamples({ ...session, name: sessionName(session) }),
     );
 

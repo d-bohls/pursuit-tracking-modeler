@@ -2,6 +2,7 @@
 // visits.
 
 import type { ExperimentConfig, SimulationMode } from './experiment';
+import { browserLang, lang, setLang, type Lang } from '../i18n';
 import { $ } from './dom';
 import { clamp } from './labels';
 
@@ -12,6 +13,7 @@ const samplePeriodInput = $<HTMLInputElement>('samplePeriod');
 const simulationModeSelect = $<HTMLSelectElement>('simulationMode');
 const discretePointsCheckbox = $<HTMLInputElement>('discretePoints');
 const themeGroup = $<HTMLDivElement>('themeGroup');
+const langGroup = $<HTMLDivElement>('langGroup');
 const resetSettingsBtn = $<HTMLButtonElement>('resetSettingsBtn');
 
 const STORE_KEY = 'pursuit-tracking-modeler.settings';
@@ -34,6 +36,7 @@ interface StoredSettings {
   samplePeriodMs?: number;
   discretePoints?: boolean;
   theme?: ThemeChoice;
+  lang?: Lang;
 }
 
 /**
@@ -57,6 +60,7 @@ function saveSettings() {
       samplePeriodMs: currentConfig().samplePeriodMs,
       discretePoints: discretePointsCheckbox.checked,
       theme: themeChoice,
+      lang,
     };
     localStorage.setItem(STORE_KEY, JSON.stringify(stored));
   } catch {
@@ -75,6 +79,13 @@ function applyTheme(choice: ThemeChoice) {
   else document.documentElement.setAttribute('data-theme', choice);
   for (const b of themeGroup.querySelectorAll('button')) {
     b.setAttribute('aria-checked', String(b.getAttribute('data-theme') === choice));
+  }
+}
+
+function applyLang(choice: Lang) {
+  setLang(choice);
+  for (const b of langGroup.querySelectorAll('button')) {
+    b.setAttribute('aria-checked', String(b.dataset.lang === choice));
   }
 }
 
@@ -117,15 +128,23 @@ $<HTMLDetailsElement>('advancedSettings').hidden = !new URLSearchParams(location
   // data-theme, so the prefers-color-scheme block styles the very first paint
   // and there is no flash before this runs.
   applyTheme(s.theme ?? DEFAULT_SETTINGS.theme);
+  // A link can choose the language (?lang=pt), and the choice sticks, so a
+  // later visit without it stays in that language. Otherwise the stored
+  // choice, and failing that the browser's language.
+  const linked = new URLSearchParams(location.search).get('lang');
+  const isLang = (v: unknown): v is Lang => v === 'en' || v === 'pt';
+  applyLang(isLang(linked) ? linked : isLang(s.lang) ? s.lang : browserLang());
   syncPaceMarks();
+  if (isLang(linked)) saveSettings();
 }
 
 /**
  * Hooks the controls up to the app.
  * @param onChange a setting that affects the run changed; currentConfig() has it.
  * @param onRepaint the theme changed, which the canvases cannot pick up from CSS.
+ * @param onLanguage the language changed; everything the code wrote must be redone.
  */
-export function connectSettings(onChange: () => void, onRepaint: () => void) {
+export function connectSettings(onChange: () => void, onRepaint: () => void, onLanguage: () => void) {
   // The numbers under the slider are shortcuts to their positions. They are
   // skipped by Tab: the slider itself is the control, and its arrow keys
   // reach every value.
@@ -155,9 +174,12 @@ export function connectSettings(onChange: () => void, onRepaint: () => void) {
     simulationModeSelect.value = DEFAULT_SETTINGS.simulationMode;
     discretePointsCheckbox.checked = DEFAULT_SETTINGS.discretePoints;
     applyTheme(DEFAULT_SETTINGS.theme);
+    const langBefore = lang;
+    applyLang(browserLang());
     syncPaceMarks();
     onChange();
     onRepaint();
+    if (lang !== langBefore) onLanguage();
     // Forget the stored settings outright rather than storing the defaults, so
     // a later change of default is picked up instead of being overridden by a
     // saved copy of the old one.
@@ -166,6 +188,14 @@ export function connectSettings(onChange: () => void, onRepaint: () => void) {
     } catch {
       /* nothing stored, nothing to forget */
     }
+  });
+
+  langGroup.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('button[data-lang]') as HTMLButtonElement | null;
+    if (!btn) return;
+    applyLang(btn.dataset.lang === 'pt' ? 'pt' : 'en');
+    onLanguage();
+    saveSettings();
   });
 
   themeGroup.addEventListener('click', (e) => {

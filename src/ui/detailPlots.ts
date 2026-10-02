@@ -3,7 +3,6 @@
 // pair to explore.
 
 import {
-  dampingCharacter,
   dampingMetrics,
   firstOrderMagnitudeResponse,
   secondOrderMagnitudeResponse,
@@ -15,7 +14,9 @@ import { simulateSecondOrder } from '../engine/curveFit';
 import { dft } from '../engine/dsp';
 import { discretePairToContinuous } from '../engine/poleConversion';
 import type { StepResponse } from '../engine/types';
+import { T } from '../i18n';
 import { $ } from './dom';
+import { dampingName } from './labels';
 import { clearPlot, plotFrequencyResponse, plotPoleLocations, plotStepResponse, poleGeometry } from './plotting';
 
 const stepGraph = $<HTMLCanvasElement>('stepGraph');
@@ -84,7 +85,7 @@ function fitOf(subject: DetailSubject) {
  *              after a theme change, which the canvases cannot inherit.
  * @param emptyHeading what the heading says when there is nothing to show.
  */
-export function showDetail(subject: DetailSubject | undefined, force = false, emptyHeading = 'Step details') {
+export function showDetail(subject: DetailSubject | undefined, force = false, emptyHeading = T.stepDetails) {
   if (!subject) {
     // Canvases keep their last drawing, so returning early here would leave
     // a previous run's plots on screen under an empty heading.
@@ -106,7 +107,7 @@ export function showDetail(subject: DetailSubject | undefined, force = false, em
   // means nothing for the next -- or, for the model, from its kept adjustment.
   if (!same) dragged = subject.kind === 'model' ? subject.adjusted : null;
   plotted = subject;
-  responseDetailHeading.textContent = subject.kind === 'step' ? `Step ${subject.index + 1} details` : 'Model details';
+  responseDetailHeading.textContent = subject.kind === 'step' ? T.stepNDetails(subject.index + 1) : T.modelDetails;
 
   // Measured response: |H[k]| of the DFT of the step response's deconvolved
   // h[n], computed once -- a drag redraws many times a second and only the
@@ -209,15 +210,15 @@ function drawDetail() {
   const c = discretePairToContinuous(pole.p1, pole.p2, subject.samplePeriodMs / 1000);
   const { wn, zeta, overshoot } = dampingMetrics({ P11: 0, D1: 0, P21: c.cr, P22: c.ci, D2: 0 });
   const errText = Number.isFinite(errPct)
-    ? `${errPct < 10 ? errPct.toFixed(1) : errPct.toFixed(0)}% err${subject.kind === 'model' ? ' on average' : ''}`
+    ? `${errPct < 10 ? errPct.toFixed(1) : errPct.toFixed(0)}% ${T.err}${subject.kind === 'model' ? T.errOnAverage : ''}`
     : '';
   poleReadout.textContent =
-    `ζ ${zeta.toFixed(2)} ${dampingCharacter(zeta)} · ωn ${wn.toFixed(2)} rad/s · ${overshoot.toFixed(0)}% overshoot` +
+    T.poleReadout(zeta.toFixed(2), dampingName(zeta), wn.toFixed(2), overshoot.toFixed(0)) +
     (errText ? ` · ${errText}` : '');
   poleResetBtn.hidden = !dragged;
   detailLegend.hidden = false;
-  keyMeasured.textContent = subject.kind === 'model' ? 'Steps, scaled' : 'Measured';
-  keyModel.textContent = dragged ? 'Dragged model' : 'Model';
+  keyMeasured.textContent = subject.kind === 'model' ? T.stepsScaled : T.measured;
+  keyModel.textContent = dragged ? T.draggedModel : T.model;
   keyFit.hidden = !dragged;
 }
 

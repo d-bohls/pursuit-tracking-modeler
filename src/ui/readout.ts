@@ -5,7 +5,6 @@
 import type { SimulationMode } from './experiment';
 import type { ContinuousModelParams, DiscreteModelParams } from '../engine/types';
 import {
-  dampingCharacter,
   dampingMetrics,
   secondOrderDifferenceEquation,
   type StepResponseAnalysis,
@@ -13,7 +12,8 @@ import {
 import { outlierBounds, outlierKindOf } from '../engine/outliers';
 import { pairProduct } from '../engine/poleConversion';
 import { $ } from './dom';
-import { selfTestLabel } from './labels';
+import { T } from '../i18n';
+import { dampingName, selfTestLabel } from './labels';
 
 const readoutEl = $<HTMLDivElement>('readout');
 const readoutSource = $<HTMLParagraphElement>('readoutSource');
@@ -53,21 +53,23 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
   // A single step's numbers must never be mistaken for the model's: the
   // heading says which one is showing.
   readoutHeading.textContent =
-    step !== null ? `Step ${step + 1} model${byModel ? ' · self-test' : ''}` : byModel
+    step !== null
+      ? `${T.stepModel(step + 1)}${byModel ? T.selfTestSuffix : ''}`
+      : byModel
         ? selfTestLabel(source)
         : model?.method === 'joint'
-          ? 'Joint model'
-          : 'Median model';
+          ? T.jointModel
+          : T.medianModel;
   readoutHeading.parentElement!.parentElement!.dataset.source = byModel ? 'model' : 'you';
   readoutHeading.parentElement!.parentElement!.dataset.selected = step !== null ? 'step' : 'model';
 
   const included = responses.filter((_, i) => !excluded.has(i));
   if (step === null && (included.length === 0 || !model)) {
-    readoutSource.textContent = responses.length === 0 ? '' : 'All step responses excluded';
-    readoutEl.innerHTML =
-      responses.length === 0
-        ? '<p class="empty">Record a few step responses and the identified model appears here, updating as each step interval completes.</p>'
-        : '<p class="empty">Tick at least one step response to identify a model.</p>';
+    readoutSource.textContent = responses.length === 0 ? '' : T.allExcluded;
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = responses.length === 0 ? T.noModelYet : T.tickToIdentify;
+    readoutEl.replaceChildren(empty);
     return;
   }
 
@@ -84,12 +86,12 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
     d = model!.discrete;
     const excludedCount = responses.length - included.length;
     readoutSource.textContent =
-      `${model!.method === 'joint' ? 'Fitted to' : 'Median of'} ${included.length} step response${included.length === 1 ? '' : 's'}` +
-      (excludedCount > 0 ? ` · ${excludedCount} excluded` : '') +
-      (model!.adjusted ? ' · pole adjusted' : '');
+      (model!.method === 'joint' ? T.fittedToN(included.length) : T.medianOfN(included.length)) +
+      (excludedCount > 0 ? T.excludedN(excludedCount) : '') +
+      (model!.adjusted ? T.poleAdjusted : '');
   }
   const { wn, zeta, overshoot } = dampingMetrics(c);
-  const character = dampingCharacter(zeta);
+  const character = dampingName(zeta);
   const tau = c.P11 === 0 ? Infinity : -1 / c.P11;
 
   // The lede is what the numbers MEAN about the person. H(s) is the evidence,
@@ -102,24 +104,25 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
   const decay = zeta > 1 ? wn * (zeta - Math.sqrt(zeta * zeta - 1)) : zeta * wn;
   const settlingS = decay > 0 ? 4 / decay : Infinity;
   const settlingNote =
-    settlingS <= 30 ? `settles in ~${settlingS.toFixed(1)} s` : 'settles too slowly to quote';
+    settlingS <= 30 ? T.settlesIn(settlingS.toFixed(1)) : T.settlesTooSlowly;
 
   const tiles =
-    tile('Reaction delay', (c.D2 * 1000).toFixed(0), ' ms', 'before the response begins') +
-    tile('Overshoot', overshoot.toFixed(0), ' %', 'past the target on the first swing') +
-    tile('Damping ζ', zeta.toFixed(2), '', character) +
-    tile('Natural frequency', wn.toFixed(2), ' rad/s', settlingNote);
+    tile(T.reactionDelay, (c.D2 * 1000).toFixed(0), ' ms', T.beforeResponse) +
+    tile(T.overshoot, overshoot.toFixed(0), ' %', T.pastTarget) +
+    tile(T.damping, zeta.toFixed(2), '', character) +
+    tile(T.naturalFrequency, wn.toFixed(2), ' rad/s', settlingNote);
 
   const verdict =
-    `<p class="verdict">${step !== null ? 'In this step, ' : ''}${
-      step !== null ? (byModel ? 'the model reacts' : 'you react') : byModel ? 'The model reacts' : 'You react'
-    } after <strong>${(c.D2 * 1000).toFixed(0)} ms</strong>, ` +
-    `then ${byModel ? 'closes' : 'close'} in on the target` +
-    `${overshoot >= 1 ? `, overshooting by <strong>${overshoot.toFixed(0)}%</strong> before settling` : ' without overshooting'}.</p>`;
+    `<p class="verdict">${T.verdict({
+      inStep: step !== null,
+      byModel,
+      delay: (c.D2 * 1000).toFixed(0),
+      overshoot: overshoot >= 1 ? overshoot.toFixed(0) : null,
+    })}</p>`;
 
   const twoZetaWn = (2 * zeta * wn).toFixed(2);
   const continuous =
-    `<section class="model"><h3 class="model-label">Continuous · derived from the fit</h3>` +
+    `<section class="model"><h3 class="model-label">${T.continuous}</h3>` +
     `<div class="tf"><span class="tf-lhs">H(s) =</span>` +
     `<span class="frac"><span class="num">${wn.toFixed(2)}<sup>2</sup></span>` +
     `<span class="den">s<sup>2</sup> + ${twoZetaWn}s + ${wn.toFixed(2)}<sup>2</sup></span></span>` +
@@ -141,7 +144,7 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
   // and it leads the continuation line, as typeset maths does.
   const signed = (v: number, body: string) => `${v < 0 ? '−' : '+'} ${num(Math.abs(v))} ${body}`;
   const discrete =
-    `<section class="model"><h3 class="model-label">Discrete · sampled every ${samplePeriodMs} ms</h3>` +
+    `<section class="model"><h3 class="model-label">${T.discrete(samplePeriodMs)}</h3>` +
     `<div class="tf"><span class="tf-lhs">H(z) =</span>` +
     `<span class="frac"><span class="num">${num(b0)} <var>z</var><sup>−${delay}</sup></span>` +
     `<span class="den">1 ${signed(-a1, '<var>z</var><sup>−1</sup>')} ${signed(a2, '<var>z</var><sup>−2</sup>')}</span></span></div>` +
@@ -150,27 +153,23 @@ export function renderReadout({ responses, excluded, samplePeriodMs, source, sel
     `${signed(b0, `<var>x</var>[<var>n</var>−${delay}]`)}</p></section>`;
 
   const details =
-    `<p class="details-line">Best first-order fit: τ = ${tau.toFixed(3)} s, delay ${(c.D1 * 1000).toFixed(0)} ms</p>`;
+    `<p class="details-line">${T.firstOrderLine(tau.toFixed(3), (c.D1 * 1000).toFixed(0))}</p>`;
 
   const bounds = outlierBounds(responses);
   const kind = step !== null ? outlierKindOf(responses[step], bounds) : null;
   const poor = responses.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'poor').length;
   const degenerate = responses.filter((t, i) => !excluded.has(i) && outlierKindOf(t, bounds) === 'degenerate').length;
   const notes: string[] = [];
-  const responsesFit = (n: number) => `${n} step response${n === 1 ? ' fits' : 's fit'}`;
-  if (poor > 0) notes.push(`${responsesFit(poor)} more than 3× worse than the median`);
-  if (degenerate > 0) notes.push(`${responsesFit(degenerate)} more than 3× better than the median, likely too little movement to measure`);
+  if (poor > 0) notes.push(T.fitsWorseN(poor));
+  if (degenerate > 0) notes.push(T.fitsBetterN(degenerate));
   const flagged = poor + degenerate;
   const flag =
     step !== null
       ? kind
-        ? `<p class="flag">Relative to its step size, this step fits more than 3× ` +
-          `${kind === 'poor' ? 'worse than the median, so it may not have measured the same system' : 'better than the median, likely too little movement to measure'}` +
-          `${excluded.has(step) ? '.' : '; untick it to leave it out of the model.'}</p>`
+        ? `<p class="flag">${T.stepFlag(kind, excluded.has(step))}</p>`
         : ''
       : notes.length > 0
-      ? `<p class="flag">Relative to step size, ${notes.join('; ')}. ` +
-        `${flagged === 1 ? "It's" : "They're"} marked ⚠ in Session; untick ${flagged === 1 ? 'it' : 'one'} to see how much it moves the model.</p>`
+      ? `<p class="flag">${T.modelFlag(notes, flagged)}</p>`
       : '';
 
   readoutEl.innerHTML =

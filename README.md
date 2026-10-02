@@ -42,8 +42,11 @@ frequency, as continuous- and discrete-time transfer functions.
 - **Sessions** are kept in the browser, and the open one reopens on reload.
   Click a session's name to rename it; open, export, import or delete sessions
   from the Sessions dialog.
-- **Settings** hold the theme, the average time between steps and the sample
-  period, and are remembered between visits.
+- **Settings** hold the theme, the language (English or Portuguese), the
+  average time between steps and the sample period, and are remembered
+  between visits. The language starts as the browser's, or as a link chooses:
+  [`?lang=pt`](https://d-bohls.github.io/pursuit-tracking-modeler/?lang=pt)
+  opens the app in Portuguese.
 
 ## Running it
 
@@ -75,6 +78,8 @@ npm test            # every check below
   the identified damping predicts. It opens the page with `?selftest`, which
   shows the self-test controls in Settings; they are hidden otherwise.
 - `touch-test`: holding a finger records, and lifting it stops.
+- `language-test`: in Portuguese, nothing on screen is left in English, the
+  choice is kept across a reload, and English comes back on request.
 
 The browser tests build the app, serve it locally and drive it with
 Playwright's Chromium and WebKit, installed once with
@@ -106,6 +111,7 @@ src/
     sessionTitle.ts    the open session's name, and renaming it
     labels.ts          shared wording and formatting
     dom.ts             small DOM helpers
+  i18n.ts              every word the interface shows, in English and Portuguese
   main.ts              the app's state, wiring the pieces together
 public/                the favicon and the iOS home-screen icon
 test/                  the checks and tests above, and serve.mjs, which

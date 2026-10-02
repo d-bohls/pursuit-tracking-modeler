@@ -1,6 +1,7 @@
 // The open session's name in the heading over its step responses, and
 // renaming it in place.
 
+import { T } from '../i18n';
 import { $ } from './dom';
 import { sessionName } from './labels';
 import { getSession, updateSession, type Session } from './sessions';
@@ -26,8 +27,8 @@ export function setSessionName(name: string) {
   cancelRename();
   sessionSepEl.hidden = sessionNameEl.hidden = !name;
   sessionNameEl.textContent = name;
-  sessionNameEl.title = name ? `${name} — click to rename` : '';
-  sessionNameEl.parentElement!.title = name ? `Session · ${name}` : '';
+  sessionNameEl.title = name ? T.clickToRename(name) : '';
+  sessionNameEl.parentElement!.title = name ? `${T.session} · ${name}` : '';
 }
 
 /*

@@ -1,4 +1,6 @@
 // Canvas plotting for the analysis panels.
+
+import { T } from '../i18n';
 //
 // Every plot here sizes its own backing store to the element's real device
 // pixels and reads its colours from CSS custom properties, so the same code
@@ -119,7 +121,8 @@ export function plotFrequencyResponse(canvas: HTMLCanvasElement, series: Frequen
   ctx.fillText('0', marginL - 3, height - marginB + 14);
   ctx.fillText('π', marginL + plotW / 2 - 3, height - marginB + 14);
   ctx.fillText('2π', width - marginR - 10, height - marginB + 14);
-  ctx.fillText('ω (rad/sample)', marginL + plotW / 2 - 38, height - marginB + 26);
+  const axis = T.radPerSample;
+  ctx.fillText(axis, marginL + plotW / 2 - ctx.measureText(axis).width / 2, height - marginB + 26);
   // The top of the axis sits close to 1 whenever the response barely peaks,
   // and there its label printed on top of the unity label. Unity wins: it is
   // the line a well-tracked step sits on.
@@ -215,7 +218,7 @@ export function plotPoleLocations(
 
   ctx.fillStyle = c.muted;
   ctx.font = '10px system-ui, sans-serif';
-  ctx.fillText('unit circle', cx - r, cy - r - 6);
+  ctx.fillText(T.unitCircle, cx - r, cy - r - 6);
 
   // Where a pair's two poles sit: a complex pair mirrored about the real
   // axis, a real pair (p2 < 0) both ON it, either side of p1.

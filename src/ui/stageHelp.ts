@@ -3,6 +3,7 @@
 
 import type { Phase, SimulationMode } from './experiment';
 import { $, setList } from './dom';
+import { T } from '../i18n';
 import { modelName } from './labels';
 
 const stageEl = $<HTMLElement>('stage');
@@ -100,27 +101,15 @@ export function renderGuide(phase: Phase, runMode: SimulationMode) {
   let items: string[];
   if (phase === 'recording' && runMode !== 'none') {
     // Nothing for the hand to do: the model is the one tracking.
-    items = [
-      `The ${modelName(runMode)} is tracking the target, not you`,
-      touch ? 'Tap the plot to stop the run' : 'Click the plot or press the Space bar to stop',
-    ];
+    items = [T.modelIsTracking(modelName(runMode)), touch ? T.tapToStopRun : T.clickToStop];
   } else if (phase === 'recording') {
-    items = [
-      touch
-        ? "Slide your finger up and down to match the target's height"
-        : "Move your pointer up and down to match the target's height",
-      touch ? 'Lift your finger to stop recording' : 'Click the plot or press the Space bar to stop',
-    ];
+    items = [touch ? T.slideFinger : T.movePointer, touch ? T.liftToStop : T.clickToStop];
   } else if (phase === 'replaying') {
-    items = [touch ? 'Tap the plot to stop the replay' : 'Click the plot or press the Space bar to stop'];
+    items = [touch ? T.tapToStopReplay : T.clickToStop];
   } else {
     // In the order of the buttons: Record -- what to do, then how to start
     // and stop -- then Replay. The same every time, sessions or not.
-    items = [
-      `When recording, follow the target's height with your ${touch ? 'finger' : 'pointer'}`,
-      touch ? 'Hold the record button or the plot to record; lift to stop' : 'Space bar also starts and stops recording',
-      'Replay this session with the model overlaid',
-    ];
+    items = [T.whenRecording(touch), touch ? T.holdToRecord : T.spaceBar, T.replayHelp];
   }
   setList(stageGuide, items);
   placeGuide();

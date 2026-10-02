@@ -24,7 +24,6 @@ import {
   analyzeStepResponse,
   aggregateResponses,
   dampingMetrics,
-  dampingCharacter,
   jointModel,
   type StepResponseAnalysis,
 } from './engine/analysis';
@@ -34,7 +33,8 @@ import { errorPctOf, outlierBounds, outlierKindOf } from './engine/outliers';
 import { splitStepResponses, padResponses, responseLeadIns } from './engine/stepResponses';
 import { parseSessionFile } from './engine/dataFormat';
 import { $, closeOnBackdropClick } from './ui/dom';
-import { elapsed, responseCount, sessionName, whenLabel } from './ui/labels';
+import { dampingName, elapsed, responseCount, sessionName, whenLabel } from './ui/labels';
+import { T } from './i18n';
 import { connectSettings, currentConfig } from './ui/settings';
 import { dismissFlash, flash, isTouchFirst, onTouchFirstChange, renderGuide } from './ui/stageHelp';
 import { renderReadout as drawReadout } from './ui/readout';
@@ -51,7 +51,6 @@ const stageEl = $<HTMLElement>('stage');
 const recordBtn = $<HTMLButtonElement>('recordBtn');
 const replayBtn = $<HTMLButtonElement>('replayBtn');
 const settingsBtn = $<HTMLButtonElement>('settingsBtn');
-const SETTINGS_TITLE = settingsBtn.title;
 const settingsDialog = $<HTMLDialogElement>('settingsDialog');
 const sessionsDialog = $<HTMLDialogElement>('sessionsDialog');
 const sessionsBtn = $<HTMLButtonElement>('sessionsBtn');
@@ -142,10 +141,10 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
     syncAnalysis();
     if (produced) void keepSession(xs, ys, runMode, analysisSamplePeriodMs);
     statusEl.textContent = produced
-      ? `${runMode === 'none' ? 'Stopped' : 'Model run stopped'} · ${xs.length} samples · ${responseCount(responses.length)}`
+      ? `${runMode === 'none' ? T.stopped : T.modelRunStopped} · ${T.samplesCount(xs.length)} · ${responseCount(responses.length)}`
       : xs.length < 2
-        ? 'Stopped · nothing recorded'
-        : 'Stopped · no complete step responses';
+        ? T.nothingRecordedStatus
+        : T.noCompleteStatus;
     // The 'finished' state is emitted BEFORE this callback, so the render that
     // went with it still saw the previous recording -- or none at all. Re-check
     // now that there is something to replay.
@@ -154,10 +153,10 @@ const experiment = new TrackingExperiment(graphCanvas, currentConfig(), {
     // Announced from here rather than from renderState: only now are the
     // finished run's step responses counted, and onEnd fires for recordings only, so
     // a replay never claims to have recorded anything.
-    if (produced) flash(`${runMode === 'none' ? 'Session recorded' : 'Model run finished'} · ${responseCount(responses.length)}`);
-    else if (xs.length < 2) flash('Nothing recorded');
+    if (produced) flash(`${runMode === 'none' ? T.sessionRecorded : T.modelRunFinished} · ${responseCount(responses.length)}`);
+    else if (xs.length < 2) flash(T.nothingRecorded);
     // Only claim to have kept something when there was something to keep.
-    else flash(lastSamples ? 'No complete step responses · previous session kept' : 'No complete step responses');
+    else flash(lastSamples ? T.noCompleteKept : T.noComplete);
   },
 });
 
@@ -200,19 +199,19 @@ function renderState(state: ExperimentState) {
     // third step response, and before the first there is nothing yet. The run stops
     // itself at the limit, so say what the limit is; the closing step starts
     // no new step response, so the count stops there.
-    const which = state.steps === 0 ? 'no steps yet' : `step ${Math.min(state.steps, MAX_RESPONSES)} of ${MAX_RESPONSES}`;
-    const who = runMode === 'none' ? 'Recording' : `Model run (${runMode === 'first' ? 'first' : 'second'}-order)`;
+    const which = state.steps === 0 ? T.noStepsYetStatus : T.stepOf(Math.min(state.steps, MAX_RESPONSES), MAX_RESPONSES);
+    const who = runMode === 'none' ? T.recording : T.modelRun(runMode === 'first' ? 'first' : 'second');
     statusEl.textContent = `${who} · ${which} · ${elapsed(state.elapsedMs)}`;
   } else if (replaying) {
     // "with the model" was redundant -- the legend names the model line right
     // beside this -- and it was what pushed the label into an ellipsis.
-    statusEl.textContent = `Replaying · ${Math.round(state.progress * 100)}% · ${elapsed(state.elapsedMs)}`;
+    statusEl.textContent = `${T.replaying} · ${Math.round(state.progress * 100)}% · ${elapsed(state.elapsedMs)}`;
   } else if (state.phase === 'finished') {
     // A finished RECORDING gets its line from onEnd instead, which runs a
     // moment later and is the only place the run's step responses have been counted.
-    if (previousPhase === 'replaying') statusEl.textContent = 'Replay finished';
+    if (previousPhase === 'replaying') statusEl.textContent = T.replayFinished;
   } else {
-    statusEl.textContent = 'Ready';
+    statusEl.textContent = T.ready;
   }
 
   previousPhase = state.phase;
@@ -223,7 +222,7 @@ function renderState(state: ExperimentState) {
  * it stays while a finished replay's line is still on the plot.
  */
 function syncLegend() {
-  legendYou.textContent = plotSource === 'none' ? 'You' : 'Model (tracking)';
+  legendYou.textContent = plotSource === 'none' ? T.you : T.modelTracking;
   legendModel.hidden = !(experiment.hasModelTrace() || experiment.getPhase() === 'replaying');
 }
 
@@ -236,12 +235,12 @@ function updateActionAvailability() {
   // The settings would change the sampling under a run that is using it.
   // aria-disabled, like Replay, so the tooltip saying why still shows.
   settingsBtn.setAttribute('aria-disabled', String(running));
-  settingsBtn.title = running ? 'Available when this run stops' : SETTINGS_TITLE;
+  settingsBtn.title = running ? T.availableAfterRun : T.settingsTitle;
   replayBtn.title = !hasRun
-    ? 'Nothing to replay yet — record a session first, or open one from Sessions'
+    ? T.nothingToReplay
     : running
-      ? 'Available when this run stops'
-      : "Replay this session with the model's response to the same steps overlaid";
+      ? T.availableAfterRun
+      : T.replayTitle;
 }
 
 /**
@@ -387,7 +386,7 @@ function syncModelFitGroup() {
     b.setAttribute('aria-checked', String(b.dataset.fit === modelFit));
     b.disabled = running;
   }
-  modelFitGroup.title = running ? 'Available when this run stops' : '';
+  modelFitGroup.title = running ? T.availableAfterRun : '';
 }
 
 function renderReadout() {
@@ -454,7 +453,7 @@ const responseDetail = $<HTMLDivElement>('responseDetail');
 function renderResponseCount() {
   const n = responses.length;
   responseCountNote.textContent =
-    n === 0 ? '' : n === 1 ? '1 step response' : `${n} step responses, ${isTouchFirst() ? 'tap' : 'select'} one to see details`;
+    n === 0 ? '' : T.countNote(n, isTouchFirst());
   // Nothing to untick or inspect yet.
   responseCountNote.parentElement!.hidden = responseDetail.hidden = n === 0;
 }
@@ -462,7 +461,10 @@ function renderResponseCount() {
 function renderFilmstrip() {
   renderResponseCount();
   if (responses.length === 0) {
-    filmstripEl.innerHTML = '<p class="empty">Step responses appear here as you record, one per step.</p>';
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = T.noStepsYet;
+    filmstripEl.replaceChildren(empty);
     return;
   }
 
@@ -496,14 +498,14 @@ function renderFilmstrip() {
     inspect.dataset.card = String(i);
     inspect.setAttribute('aria-pressed', String(i === selected));
     inspect.innerHTML =
-      `<span class="name">Step ${i + 1}${kind ? ' ⚠' : ''}</span>` +
+      `<span class="name">${T.stepN(i + 1)}${kind ? ' ⚠' : ''}</span>` +
       `<canvas></canvas>` +
       `<span class="response-stats"><span>ζ ${zeta.toFixed(2)}</span>` +
-      `<span>${Number.isFinite(pct) ? `${pct < 10 ? pct.toFixed(1) : pct.toFixed(0)}% err` : '—'}</span></span>`;
+      `<span>${Number.isFinite(pct) ? `${pct < 10 ? pct.toFixed(1) : pct.toFixed(0)}% ${T.err}` : '—'}</span></span>`;
     inspect.title =
-      `RMS ${t.fit2Rms.toFixed(1)} px on a ${t.stepSize.toFixed(0)} px step` +
-      (kind === 'poor' ? ' — fits far worse than the other step responses' : '') +
-      (kind === 'degenerate' ? ' — fits far better than is plausible; little to measure here' : '');
+      T.rmsTitle(t.fit2Rms.toFixed(1), t.stepSize.toFixed(0)) +
+      (kind === 'poor' ? T.fitsWorse : '') +
+      (kind === 'degenerate' ? T.fitsBetter : '');
     // Update in place rather than rebuilding the strip. A rebuild replaces the
     // very node being operated, which drops keyboard focus to the body -- so
     // excluding three step responses in a row meant tabbing back in three times.
@@ -513,7 +515,7 @@ function renderFilmstrip() {
     box.type = 'checkbox';
     box.className = 'response-include';
     box.checked = !excluded.has(i);
-    box.setAttribute('aria-label', `Include step ${i + 1} in the model`);
+    box.setAttribute('aria-label', T.includeStep(i + 1));
     box.addEventListener('change', () => {
       if (box.checked) excluded.delete(i);
       else excluded.add(i);
@@ -564,15 +566,14 @@ function fillModelCard() {
   const d = model?.discrete;
   const zeta = model ? dampingMetrics(model.continuous).zeta : NaN;
   inspect.innerHTML =
-    `<span class="name">Model</span><canvas></canvas>` +
+    `<span class="name">${T.model}</span><canvas></canvas>` +
     `<span class="response-stats"><span>${d ? `ζ ${zeta.toFixed(2)}` : '—'}</span>` +
-    `<span>${included.length} step${included.length === 1 ? '' : 's'}</span></span>`;
-  const ticked = `${included.length} ticked step response${included.length === 1 ? '' : 's'}`;
+    `<span>${T.steps(included.length)}</span></span>`;
   inspect.title = !d
-    ? 'Tick at least one step response to build the model'
+    ? T.tickToBuild
     : model!.method === 'joint'
-      ? `One model fitted to the ${ticked}`
-      : `The median of the fits of the ${ticked}`;
+      ? T.jointOf(included.length)
+      : T.medianOf(included.length);
   if (!d) return;
   // The model's response to a unit step, led in from rest like the others.
   const body = Math.max(2, ...included.map((t) => t.response.xn.length));
@@ -604,7 +605,7 @@ function renderPlots(force = false) {
   const steps = responses.map((t, i) => ({ t, lead: leadOf(i) })).filter((_, i) => !excluded.has(i));
   const fit = fittedModel();
   if (steps.length === 0 || !fit) {
-    showDetail(undefined, force, 'Model details');
+    showDetail(undefined, force, T.modelDetails);
     return;
   }
   const model = fit.discrete;
@@ -615,11 +616,9 @@ function renderPlots(force = false) {
 function renderSimModelInfo() {
   const model: SimulationModel = experiment.getSimulationModel();
   const { wn, zeta } = dampingOf(model);
-  const character = dampingCharacter(zeta);
   const overshoot = zeta < 1 ? Math.exp((-Math.PI * zeta) / Math.sqrt(1 - zeta * zeta)) * 100 : 0;
-  const source = identifiedYet ? 'the identified model' : 'built-in demo model; record a run to replace it';
-  simModelInfo.textContent =
-    `Model in use: ${source} — ωn ${wn.toFixed(2)} rad/s, ζ ${zeta.toFixed(2)} (${character}, ${overshoot.toFixed(0)}% overshoot)`;
+  const source = identifiedYet ? T.identifiedModel : T.demoModel;
+  simModelInfo.textContent = T.modelInUse(source, wn.toFixed(2), zeta.toFixed(2), dampingName(zeta), overshoot.toFixed(0));
 }
 
 /* --------------------------------------------------------------- controls */
@@ -742,10 +741,37 @@ window.addEventListener('pageshow', (e) => {
   if (e.persisted) repaintForTheme();
 });
 
-connectSettings(() => {
-  experiment.updateConfig(currentConfig());
+connectSettings(
+  () => {
+    experiment.updateConfig(currentConfig());
+    syncLegend();
+  },
+  repaintForTheme,
+  relabel,
+);
+
+/**
+ * Redoes everything the code has written, in the language just chosen. The
+ * page's static text is redone by setLang itself.
+ */
+function relabel() {
   syncLegend();
-}, repaintForTheme);
+  updateActionAvailability();
+  renderGuide(experiment.getPhase(), runMode);
+  renderSimModelInfo();
+  renderResults();
+  renderPlots(true);
+  dismissFlash();
+  if (!experiment.isActive()) statusEl.textContent = T.ready;
+  // The open session's name may be its date, which is written in the language.
+  const id = currentSessionId;
+  if (id !== null) {
+    void safely(() => getSession(id)).then((session) => {
+      if (session && id === currentSessionId) setSessionName(sessionName(session));
+    });
+  }
+  if (sessionsDialog.open) void renderSessions();
+}
 
 modelFitGroup.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest('button[data-fit]') as HTMLButtonElement | null;
@@ -764,7 +790,7 @@ fileInput.addEventListener('change', async () => {
   // samples and file them under the imported name.
   if (experiment.isActive()) {
     fileInput.value = '';
-    statusEl.textContent = 'Stop the run before importing a session';
+    statusEl.textContent = T.stopBeforeImport;
     return;
   }
   const text = await file.text();
@@ -774,17 +800,17 @@ fileInput.addEventListener('change', async () => {
   try {
     parsed = parseSessionFile(text);
   } catch (err) {
-    statusEl.textContent = (err as Error).message;
+    statusEl.textContent = T.notADataFile(file.name);
     return;
   }
   const { xs, ys } = parsed;
   const existing = await safely(() => findByHash(hashSamples(xs, ys)));
   if (existing) {
-    showSession(existing, `Loaded ${xs.length} samples from ${file.name} · already in your sessions`);
+    showSession(existing, `${T.loaded(xs.length, file.name)} · ${T.alreadyKept}`);
     if (sessionsDialog.open) void renderSessions();
   } else {
     showSamples(xs, ys, currentConfig().samplePeriodMs, 'none', []);
-    statusEl.textContent = `Loaded ${xs.length} samples from ${file.name}`;
+    statusEl.textContent = T.loaded(xs.length, file.name);
     // Re-renders the list itself once the new row exists.
     await keepSession(xs, ys, 'none', analysisSamplePeriodMs, file.name);
   }
@@ -880,7 +906,7 @@ async function restoreLatest() {
   const session = (id !== null ? await safely(() => getSession(id)) : undefined) ?? (await safely(listSessions))?.[0];
   // A run or an import may have started while the session store was being read.
   if (!session || lastSamples || experiment.isActive()) return;
-  showSession(session, `Reopened ${sessionName(session)}`);
+  showSession(session, T.reopened(sessionName(session)));
 }
 
 connectSessionTitle(() => currentSessionId);
@@ -891,7 +917,7 @@ connectSessions({
     !lastSamples || currentSessionId !== null || experiment.isActive()
       ? null
       : { samples: lastSamples, source: plotSource, summary: summarize() },
-  open: (session) => showSession(session, `Opened the session from ${whenLabel(session.createdAt)}`),
+  open: (session) => showSession(session, T.opened(whenLabel(session.createdAt))),
   renamed: (session) => {
     if (session.id === currentSessionId) setSessionName(sessionName(session));
   },

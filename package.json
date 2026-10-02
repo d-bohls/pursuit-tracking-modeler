@@ -12,7 +12,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsc --noEmit && tsc --noEmit -p test && npm run model-check && npm run damping-check && npm run smoke-test && npm run iphone-test && npm run sessions-test && npm run scroll-test && npm run simulation-test && npm run touch-test",
+    "test": "tsc --noEmit && tsc --noEmit -p test && npm run model-check && npm run damping-check && npm run smoke-test && npm run iphone-test && npm run sessions-test && npm run scroll-test && npm run simulation-test && npm run touch-test && npm run language-test",
     "smoke-test": "node test/smoke-test.mjs",
     "iphone-test": "node test/smoke-test.mjs --iphone",
     "model-check": "tsx test/model-check.ts",
@@ -20,7 +20,8 @@
     "scroll-test": "node test/scroll-test.mjs",
     "simulation-test": "node test/simulation-test.mjs",
     "touch-test": "node test/touch-test.mjs",
-    "sessions-test": "node test/sessions-test.mjs"
+    "sessions-test": "node test/sessions-test.mjs",
+    "language-test": "node test/language-test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
