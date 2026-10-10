@@ -233,21 +233,22 @@ export class TrackingExperiment {
     this.onGraphPress = callbacks.onGraphPress;
     this.onTouchStart = callbacks.onTouchStart;
 
-    // Touch drives a run by holding: press to start, lift to stop. With a
-    // finger the pointer IS the instrument -- it has to be on the glass to
+    // Touch drives a run by holding Record: press to start, lift to stop. With
+    // a finger the pointer IS the instrument -- it has to be on the glass to
     // track at all -- so a tap to stop cannot be told apart from tracking,
-    // and lifting is the one gesture that unambiguously means "done".
+    // and lifting is the one gesture that unambiguously means "done". A touch
+    // on the idle plot starts nothing: only Record does, so a stray touch
+    // never begins a run.
     //
     // Decided per EVENT, not per device: a laptop with a touchscreen gets
     // press-and-hold from its screen and click-to-start from its mouse, in
     // the same session.
     canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') {
-        if (!this.active) this.holdToRecord(e);
         // A finger already holding a recording is the instrument, and a second
         // one should not end the run. Anything else -- a replay -- has no
         // finger to lift, so a tap stops it, as a click does.
-        else if (this.touchPointerId === null) this.onGraphPress();
+        if (this.active && this.touchPointerId === null) this.onGraphPress();
         return;
       }
       if (this.active) this.onGraphPress();
@@ -526,10 +527,10 @@ export class TrackingExperiment {
   }
 
   /**
-   * Starts a recording that lasts as long as this touch does. The press may
-   * begin on the plot or on the Record button: the pointer is captured to the
-   * plot either way, so its moves track and its lift ends the run even when
-   * the finger went down on a button that has since been hidden.
+   * Starts a recording that lasts as long as this touch on Record does. The
+   * pointer is captured to the plot, so its moves track and its lift ends the
+   * run even though the finger went down on a button that has since been
+   * hidden.
    */
   holdToRecord(e: PointerEvent) {
     if (this.active) return;

@@ -638,8 +638,8 @@ function startRecording() {
   experiment.begin();
 }
 
-// A touch on Record holds a recording just as a touch on the plot does. It has
-// to start on the PRESS: the click only arrives when the finger lifts, so a
+// A touch on Record holds a recording for as long as the finger stays down. It
+// has to start on the PRESS: the click only arrives when the finger lifts, so a
 // run started from it began at the very moment it should have ended, and then
 // had no finger left on the glass to stop it.
 let touchPressedRecord = false;

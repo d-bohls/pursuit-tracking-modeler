@@ -115,7 +115,7 @@ const en = {
   liftToStop: 'Lift your finger to stop recording',
   tapToStopReplay: 'Tap the plot to stop the replay',
   whenRecording: (touch: boolean) => `When recording, follow the target's height with your ${touch ? 'finger' : 'pointer'}`,
-  holdToRecord: 'Hold the record button or the plot to record; lift to stop',
+  holdToRecord: 'Press and hold the record button to start recording; lift to stop',
   spaceBar: 'Space bar also starts and stops recording',
   replayHelp: 'Replay this session with the model overlaid',
 
@@ -322,7 +322,7 @@ const pt: Messages = {
   liftToStop: 'Levante o dedo para parar de gravar',
   tapToStopReplay: 'Toque no gráfico para parar a reprodução',
   whenRecording: (touch) => `Ao gravar, acompanhe a altura do alvo com ${touch ? 'o dedo' : 'o ponteiro'}`,
-  holdToRecord: 'Segure o botão de gravar ou o gráfico para gravar; solte para parar',
+  holdToRecord: 'Pressione e segure o botão de gravar para começar a gravar; solte para parar',
   spaceBar: 'A barra de espaço também inicia e para a gravação',
   replayHelp: 'Reproduza esta sessão com o modelo sobreposto',
 

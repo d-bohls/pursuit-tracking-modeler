@@ -23,8 +23,7 @@ frequency, as continuous- and discrete-time transfer functions.
 
 - **Record session** starts a run on the plot; follow the target until the
   run ends itself after 10 step responses, or stop it with the Space bar or a
-  click on the plot. On a touchscreen, hold the button or the plot and lift
-  to stop.
+  click on the plot. On a touchscreen, hold the button and lift to stop.
 - **Replay** plays the session back with the identified model driven by the
   same target, so you can see where the model and your hand disagree.
 - Each step becomes a card with a thumbnail, and the last card, **Model**, is

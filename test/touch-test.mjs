@@ -1,4 +1,5 @@
-// Touch drives a run by holding: press to start, lift to stop. This drives it
+// Touch drives a run by holding Record: press to start, lift to stop; a touch
+// on the idle plot starts nothing. This drives it
 // with REAL touches (Chrome's Input.dispatchTouchEvent), because synthetic
 // PointerEvents cannot take pointer capture and so cannot exercise the path.
 //
@@ -62,13 +63,12 @@ const lower = { x: plot.x, y: plot.y + 60 };
   await page.waitForTimeout(3500); // let the finish message clear
 }
 
-// 2. hold on the plot itself, away from the buttons
+// 2. a hold on the plot itself, away from the buttons, starts nothing
 {
   const top = { x: plot.x - 120, y: plot.y - 80 };
-  const { during, after } = await hold(top, lower, 1500);
-  console.log(`hold on plot:    during "${during}"  after "${after}"`);
-  if (!/^Recording/.test(during)) fail(`a held press on the plot did not record: "${during}"`);
-  if (!/^Stopped/.test(after)) fail(`lifting from the plot did not stop the run: "${after}"`);
+  const { during } = await hold(top, lower, 800);
+  console.log(`hold on plot:    during "${during}"`);
+  if (/^Recording/.test(during)) fail('a held press on the idle plot started a recording');
 }
 
 // 3. the trailing click of a touch on Record must not start a second run
@@ -96,5 +96,5 @@ if (failed) {
   console.error('\nTouch test FAILED');
   process.exitCode = 1;
 } else {
-  console.log('\nTouch test passed: holds record from Record or the plot, lifts stop them, taps stop replays.');
+  console.log('\nTouch test passed: holds on Record record and lifts stop them, the plot alone starts nothing, taps stop replays.');
 }

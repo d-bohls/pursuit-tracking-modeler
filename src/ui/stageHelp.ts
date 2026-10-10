@@ -107,9 +107,9 @@ export function renderGuide(phase: Phase, runMode: SimulationMode) {
   } else if (phase === 'replaying') {
     items = [touch ? T.tapToStopReplay : T.clickToStop];
   } else {
-    // In the order of the buttons: Record -- what to do, then how to start
-    // and stop -- then Replay. The same every time, sessions or not.
-    items = [T.whenRecording(touch), touch ? T.holdToRecord : T.spaceBar, T.replayHelp];
+    // In the order of the buttons: Record -- how to start and stop, then what
+    // to do -- then Replay. The same every time, sessions or not.
+    items = [touch ? T.holdToRecord : T.spaceBar, T.whenRecording(touch), T.replayHelp];
   }
   setList(stageGuide, items);
   placeGuide();
