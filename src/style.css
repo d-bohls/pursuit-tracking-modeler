@@ -220,6 +220,11 @@ button.primary[data-recording="true"] {
   cursor: crosshair;
   touch-action: none;
 }
+/* At rest a touch on the plot starts nothing, so a vertical swipe there
+ * scrolls the page like anywhere else. While a run goes, the plot keeps
+ * every touch: a second finger must not scroll the plot out from under the
+ * one that is tracking, and a tap stops a replay. */
+.stage[data-resting="true"] #graph { touch-action: pan-y; }
 
 .stage-chrome {
   position: absolute;

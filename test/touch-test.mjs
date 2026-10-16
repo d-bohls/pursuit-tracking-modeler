@@ -1,5 +1,5 @@
 // Touch drives a run by holding Record: press to start, lift to stop; a touch
-// on the idle plot starts nothing. This drives it
+// on the idle plot starts nothing, and a swipe there scrolls. This drives it
 // with REAL touches (Chrome's Input.dispatchTouchEvent), because synthetic
 // PointerEvents cannot take pointer capture and so cannot exercise the path.
 //
@@ -88,6 +88,24 @@ console.log(`tap during replay: "${replaying}" -> "${afterTap}"`);
 if (!/^Replaying/.test(replaying)) fail(`Replay did not start: "${replaying}"`);
 if (/^Replaying/.test(afterTap)) fail('a tap on the plot did not stop the replay');
 
+// 5. at rest, a vertical swipe that starts on the plot scrolls the page
+{
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+  const from = await centreOf('#graph');
+  await touch('touchStart', [{ x: from.x, y: from.y + 60, id: 1 }]);
+  for (let i = 1; i <= 10; i++) {
+    await touch('touchMove', [{ x: from.x, y: from.y + 60 - i * 15, id: 1 }]);
+    await page.waitForTimeout(16);
+  }
+  await touch('touchEnd', []);
+  await page.waitForTimeout(500);
+  const scrolled = await page.evaluate(() => window.scrollY);
+  console.log(`swipe on the resting plot: scrolled ${scrolled}px, status "${await status()}"`);
+  if (scrolled < 50) fail(`a swipe on the resting plot did not scroll the page (${scrolled}px)`);
+  if (/^Recording/.test(await status())) fail('a swipe on the resting plot started a recording');
+}
+
 if (errors.length) fail(`page errors: ${errors.join(' | ')}`);
 await browser.close();
 await app.close();
@@ -96,5 +114,5 @@ if (failed) {
   console.error('\nTouch test FAILED');
   process.exitCode = 1;
 } else {
-  console.log('\nTouch test passed: holds on Record record and lifts stop them, the plot alone starts nothing, taps stop replays.');
+  console.log('\nTouch test passed: holds on Record record and lifts stop them, the plot alone starts nothing, taps stop replays, swipes at rest scroll.');
 }
